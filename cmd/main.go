@@ -19,12 +19,12 @@ const NORMAL_SHORT_CODE_LENGTH = 8
 
 func main() {
 	db := initDB()
-	const NO_OF_ENTRIES = 1000
-	const NO_OF_TIMES_QUERY = 10_00_00_000
+	const NO_OF_ENTRIES = 10_00_00_000       // 100M
+	const NO_OF_TIMES_QUERY = 1_00_00_00_000 // 1B
 	startedTime := time.Now().Format("15:04:05")
 
-	// addNEntries(db, NO_OF_ENTRIES)
-	queryNTimes(db, NO_OF_TIMES_QUERY)
+	addNEntries(db, NO_OF_ENTRIES)
+	// queryNTimes(db, NO_OF_TIMES_QUERY)
 
 	fmt.Println("Time started:", startedTime)
 	fmt.Println("Time ended:", time.Now().Format("15:04:05"))
