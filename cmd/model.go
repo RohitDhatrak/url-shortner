@@ -1,6 +1,8 @@
 package main
 
 import (
+	"time"
+
 	"gorm.io/gorm"
 )
 
@@ -11,6 +13,8 @@ type UrlShortener struct {
 }
 
 type UrlShortenerMongoDb struct {
-	OriginalUrl string `bson:"original_url"`
-	ShortCode   string `bson:"short_code"`
+	OriginalUrl string    `bson:"original_url"`
+	ShortCode   string    `bson:"short_code"`
+	CreatedAt   time.Time `bson:"created_at"`
+	UpdatedAt   time.Time `bson:"updated_at"`
 }
