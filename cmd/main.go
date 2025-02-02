@@ -23,32 +23,33 @@ import (
 
 const MAX_RETRIES = 3
 const NORMAL_SHORT_CODE_LENGTH = 8
-const USE_NO_SQL = true
+const USE_NO_SQL = false
 
 var db *gorm.DB
 var client *qmgo.Client
 
 func main() {
 	db = initDB()
-	client = initMongoDB()
-	const NO_OF_ENTRIES = 1_00_00_000      // 10M
-	const NO_OF_TIMES_QUERY = 10_00_00_000 // 100M
+	// client = initMongoDB()
+	const NO_OF_ENTRIES = 10_00_000
+	const NO_OF_TIMES_QUERY = 10_000
 	startedTime := time.Now().Format("15:04:05")
 
-	// addNEntries(NO_OF_ENTRIES)
-	queryNTimes(NO_OF_TIMES_QUERY)
+	addNEntries(NO_OF_ENTRIES)
+	// queryNTimes(NO_OF_TIMES_QUERY)
 
 	fmt.Println("Time started:", startedTime)
 	fmt.Println("Time ended:", time.Now().Format("15:04:05"))
-	defer client.Close(context.Background())
+	// defer client.Close(context.Background())
 }
 
 func initDB() *gorm.DB {
-	dsn := "user=postgres dbname=vyson_db sslmode=disable"
+	dsn := "user=postgres dbname=vyson_db port=5433 sslmode=disable"
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		panic("Failed to connect database")
 	}
+
 	return db
 }
 
@@ -91,9 +92,13 @@ func queryNTimes(noOfTimesToQuery int) {
 func addNEntries(noOfEntries int) {
 	for i := 0; i < noOfEntries; i++ {
 		originalUrl := fmt.Sprintf("https://www.example.com/%s", uuid.New().String())
-		shortCode := hashedUrl(originalUrl, 0)
-		createShortUrlWithRetry(originalUrl, shortCode, MAX_RETRIES)
+		createShortUrl(originalUrl)
 	}
+}
+
+func createShortUrl(originalUrl string) {
+	shortCode := hashedUrl(originalUrl, 0)
+	createShortUrlWithRetry(originalUrl, shortCode, MAX_RETRIES)
 }
 
 func hashedUrl(originalUrl string, additionalLength uint) string {
