@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"go.mongodb.org/mongo-driver/bson"
+	"golang.org/x/exp/rand"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
@@ -122,16 +123,46 @@ func createShortUrlWithRetry(ogUrl, shortCode string, retryCount uint) {
 		return
 	}
 
+	start := time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC)
+	end := time.Date(2024, time.December, 31, 23, 59, 59, 0, time.UTC)
+
+	randomTime := randomTimestamp(start, end)
+
 	if USE_NO_SQL {
 		collection := client.Database("admin").Collection("url_shortners")
-		now := time.Now()
-		collection.InsertOne(context.TODO(), UrlShortenerMongoDb{OriginalUrl: ogUrl, ShortCode: shortCode, CreatedAt: now, UpdatedAt: now})
+
+		collection.InsertOne(context.TODO(),
+			UrlShortenerMongoDb{
+				OriginalUrl: ogUrl,
+				ShortCode:   shortCode,
+				CreatedAt:   randomTime,
+				UpdatedAt:   randomTime,
+			},
+		)
+
 	} else {
-		result := db.Create(&UrlShortener{OriginalUrl: ogUrl, ShortCode: shortCode})
+		result := db.Create(&UrlShortener{
+			OriginalUrl: ogUrl,
+			ShortCode:   shortCode,
+			CreatedAt:   randomTime,
+			UpdatedAt:   randomTime,
+		})
+
 		if result.Error != nil {
 			panic(result.Error)
 		}
 	}
+}
+
+func randomTimestamp(min, max time.Time) time.Time {
+	minUnix := min.Unix()
+	maxUnix := max.Unix()
+
+	delta := maxUnix - minUnix
+
+	randomSec := rand.Int63n(delta) + minUnix
+
+	return time.Unix(randomSec, 0)
 }
 
 func doesShortCodeExist(shortCode string) bool {

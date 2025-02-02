@@ -2,14 +2,14 @@ package main
 
 import (
 	"time"
-
-	"gorm.io/gorm"
 )
 
 type UrlShortener struct {
-	gorm.Model
-	OriginalUrl string `gorm:"not null"`
-	ShortCode   string `gorm:"unique;not null"`
+	OriginalUrl string    `gorm:"not null"`
+	ShortCode   string    `gorm:"unique;not null"`
+	CreatedAt   time.Time `gorm:"not null"`
+	UpdatedAt   time.Time `gorm:"not null"`
+	DeletedAt   time.Time `gorm:"default:null"`
 }
 
 type UrlShortenerMongoDb struct {
