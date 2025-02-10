@@ -1,4 +1,4 @@
-package main
+package m1a1
 
 import (
 	"context"
@@ -124,7 +124,7 @@ func createShortUrlWithRetry(ogUrl, shortCode string, retryCount uint) {
 	}
 
 	start := time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC)
-	end := time.Date(2024, time.December, 31, 23, 59, 59, 0, time.UTC)
+	end := time.Date(2025, time.February, 1, 23, 59, 59, 0, time.UTC)
 
 	randomTime := randomTimestamp(start, end)
 
@@ -135,8 +135,8 @@ func createShortUrlWithRetry(ogUrl, shortCode string, retryCount uint) {
 			UrlShortenerMongoDb{
 				OriginalUrl: ogUrl,
 				ShortCode:   shortCode,
-				CreatedAt:   randomTime,
-				UpdatedAt:   randomTime,
+				// CreatedAt:   randomTime,
+				// UpdatedAt:   randomTime,
 			},
 		)
 

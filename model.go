@@ -1,8 +1,9 @@
 package main
 
-import (
-	"time"
-)
+import "time"
+
+const MAX_RETRIES = 3
+const NORMAL_SHORT_CODE_LENGTH = 8
 
 type UrlShortener struct {
 	OriginalUrl string    `gorm:"not null"`
@@ -10,11 +11,4 @@ type UrlShortener struct {
 	CreatedAt   time.Time `gorm:"not null"`
 	UpdatedAt   time.Time `gorm:"not null"`
 	DeletedAt   time.Time `gorm:"default:null"`
-}
-
-type UrlShortenerMongoDb struct {
-	OriginalUrl string    `bson:"original_url"`
-	ShortCode   string    `bson:"short_code"`
-	CreatedAt   time.Time `bson:"created_at"`
-	UpdatedAt   time.Time `bson:"updated_at"`
 }

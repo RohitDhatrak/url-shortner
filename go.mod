@@ -4,6 +4,7 @@ go 1.23.2
 
 require (
 	github.com/google/uuid v1.6.0
+	github.com/mattn/go-sqlite3 v1.14.24
 	github.com/qiniu/qmgo v1.1.9
 	go.mongodb.org/mongo-driver v1.17.1
 	golang.org/x/exp v0.0.0-20250128182459-e0ece0dbea4c
