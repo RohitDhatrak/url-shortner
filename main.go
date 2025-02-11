@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
@@ -10,23 +11,24 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-var db *sql.DB
-
 func main() {
 	err := os.MkdirAll("db", 0755)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	db, err = NewDatabase("db/database.sqlite")
+	db, err := NewDatabase("db/database.sqlite")
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer db.Close()
 
+	ctx := context.Background()
+	ctx = AddValueToContext(&ctx, "db", db)
+
 	http.HandleFunc("/health", health)
-	http.HandleFunc("/shorten", shortenUrl)
-	http.HandleFunc("/redirect", redirectToOriginalUrl)
+	http.HandleFunc("/shorten", CtxServiceHandler(shortenUrl, &ctx))
+	http.HandleFunc("/redirect", CtxServiceHandler(redirectToOriginalUrl, &ctx))
 
 	port := ":8080"
 	fmt.Printf("Server starting on port %s...\n", port)

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 )
@@ -11,7 +12,7 @@ func health(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
-func shortenUrl(w http.ResponseWriter, r *http.Request) {
+func shortenUrl(ctx *context.Context, w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -31,20 +32,22 @@ func shortenUrl(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if doesUrlExist(requestBody.URL) {
-		shortCode := getShortCode(requestBody.URL)
-		w.WriteHeader(http.StatusOK)
+	if doesUrlExist(ctx, requestBody.URL) {
+		shortCode := getShortCode(ctx, requestBody.URL)
+		w.WriteHeader(http.StatusCreated)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"short_code": shortCode})
 		return
 	}
 
-	shortCode := createShortCode(requestBody.URL)
+	shortCode := createShortCode(ctx, requestBody.URL)
 
 	query := `
 	INSERT INTO url_shorteners (original_url, short_code, created_at, updated_at)
 	VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 `
+
+	db := GetDbFromContext(ctx)
 	_, err := db.Exec(query, requestBody.URL, shortCode)
 	if err != nil {
 		panic(err)
@@ -55,12 +58,13 @@ func shortenUrl(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"short_code": shortCode})
 }
 
-func redirectToOriginalUrl(w http.ResponseWriter, r *http.Request) {
+func redirectToOriginalUrl(ctx *context.Context, w http.ResponseWriter, r *http.Request) {
 	shortCode := r.URL.Query().Get("code")
 	if shortCode == "" {
 		http.Error(w, "Missing code parameter", http.StatusBadRequest)
 		return
 	}
-	originalUrl := getOriginalUrl(shortCode)
+
+	originalUrl := getOriginalUrl(ctx, shortCode)
 	http.Redirect(w, r, originalUrl, http.StatusTemporaryRedirect)
 }
