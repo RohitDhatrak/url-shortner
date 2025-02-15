@@ -42,16 +42,7 @@ func shortenUrl(ctx *context.Context, w http.ResponseWriter, r *http.Request) {
 
 	shortCode := createShortCode(ctx, requestBody.URL)
 
-	query := `
-	INSERT INTO url_shorteners (original_url, short_code, created_at, updated_at)
-	VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-`
-
-	db := GetDbFromContext(ctx)
-	_, err := db.Exec(query, requestBody.URL, shortCode)
-	if err != nil {
-		panic(err)
-	}
+	insertUrl(ctx, requestBody.URL, shortCode)
 
 	w.WriteHeader(http.StatusCreated)
 	w.Header().Set("Content-Type", "application/json")
@@ -66,5 +57,37 @@ func redirectToOriginalUrl(ctx *context.Context, w http.ResponseWriter, r *http.
 	}
 
 	originalUrl := getOriginalUrl(ctx, shortCode)
+	if originalUrl == "" {
+		http.Error(w, "Short code not found", http.StatusNotFound)
+		return
+	}
+
 	http.Redirect(w, r, originalUrl, http.StatusTemporaryRedirect)
+}
+
+func deleteShortCode(ctx *context.Context, w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	shortCode := r.URL.Query().Get("code")
+	if shortCode == "" {
+		http.Error(w, "Missing code parameter", http.StatusBadRequest)
+		return
+	}
+
+	if !doesShortCodeExist(ctx, shortCode) {
+		http.Error(w, "Short code not found", http.StatusNotFound)
+		return
+	}
+
+	if err := deleteUrl(ctx, shortCode); err != nil {
+		http.Error(w, "Error deleting short code", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }

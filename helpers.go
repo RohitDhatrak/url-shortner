@@ -2,13 +2,14 @@ package main
 
 import (
 	"crypto/sha256"
-	"database/sql"
 	"encoding/base64"
+	"fmt"
 	"net/http"
 
 	"context"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 func CtxServiceHandler(serviceFunc func(ctx *context.Context, w http.ResponseWriter, r *http.Request), ctx *context.Context) func(w http.ResponseWriter, r *http.Request) {
@@ -21,8 +22,8 @@ func AddValueToContext(ctx *context.Context, key, value interface{}) context.Con
 	return context.WithValue(*ctx, key, value)
 }
 
-func GetDbFromContext(ctx *context.Context) *sql.DB {
-	return (*ctx).Value("db").(*sql.DB)
+func GetDbFromContext(ctx *context.Context) *gorm.DB {
+	return (*ctx).Value("db").(*gorm.DB)
 }
 
 func createShortCode(ctx *context.Context, originalUrl string) string {
@@ -56,45 +57,68 @@ func createShortUrlWithRetry(ctx *context.Context, ogUrl, shortCode string, retr
 
 func doesShortCodeExist(ctx *context.Context, shortCode string) bool {
 	db := GetDbFromContext(ctx)
-	var exists int
-	query := "SELECT COUNT(*) FROM url_shorteners WHERE short_code = ?"
-	err := db.QueryRow(query, shortCode).Scan(&exists)
-	if err != nil {
-		panic(err)
-	}
+	var exists int64
+	db.Find(&UrlShortener{ShortCode: shortCode}).Count(&exists)
+
+	fmt.Println("exists", exists)
+
 	return exists > 0
+}
+
+func insertUrl(ctx *context.Context, originalUrl, shortCode string) {
+	db := GetDbFromContext(ctx)
+	result := db.Create(&UrlShortener{OriginalUrl: originalUrl, ShortCode: shortCode})
+
+	if result.Error != nil {
+		panic("Error inserting url into db")
+	}
 }
 
 func getOriginalUrl(ctx *context.Context, shortCode string) string {
 	db := GetDbFromContext(ctx)
-	var originalUrl string
-	query := "SELECT original_url FROM url_shorteners WHERE short_code = ?"
-	err := db.QueryRow(query, shortCode).Scan(&originalUrl)
-	if err != nil {
-		panic(err)
+
+	urlShortener := UrlShortener{}
+	result := db.Find(&urlShortener, UrlShortener{ShortCode: shortCode})
+
+	if result.Error != nil {
+		return ""
 	}
 
-	return originalUrl
+	return urlShortener.OriginalUrl
 }
 
 func doesUrlExist(ctx *context.Context, url string) bool {
 	db := GetDbFromContext(ctx)
-	var exists int
-	query := "SELECT COUNT(*) FROM url_shorteners WHERE original_url = ?"
-	err := db.QueryRow(query, url).Scan(&exists)
-	if err != nil {
-		panic(err)
+	var exists int64
+	result := db.Find(&UrlShortener{OriginalUrl: url}).Count(&exists)
+
+	if result.Error != nil {
+		return false
 	}
+
 	return exists > 0
 }
 
 func getShortCode(ctx *context.Context, url string) string {
 	db := GetDbFromContext(ctx)
-	var shortCode string
-	query := "SELECT short_code FROM url_shorteners WHERE original_url = ?"
-	err := db.QueryRow(query, url).Scan(&shortCode)
-	if err != nil {
-		panic(err)
+
+	urlShortener := UrlShortener{}
+	result := db.First(&urlShortener, UrlShortener{OriginalUrl: url})
+
+	if result.Error != nil {
+		return ""
 	}
-	return shortCode
+
+	return urlShortener.ShortCode
+}
+
+func deleteUrl(ctx *context.Context, shortCode string) error {
+	db := GetDbFromContext(ctx)
+	result := db.Delete(&UrlShortener{}, "short_code = ?", shortCode)
+
+	if result.Error != nil {
+		return result.Error
+	}
+
+	return nil
 }

@@ -9,6 +9,7 @@ require (
 	go.mongodb.org/mongo-driver v1.17.1
 	golang.org/x/exp v0.0.0-20250128182459-e0ece0dbea4c
 	gorm.io/driver/postgres v1.5.11
+	gorm.io/driver/sqlite v1.5.7
 	gorm.io/gorm v1.25.12
 )
 
