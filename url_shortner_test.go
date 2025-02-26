@@ -471,3 +471,68 @@ func TestUrlExpiration(t *testing.T) {
 		t.Errorf("Expected status not found for expired URL, got %v", status)
 	}
 }
+
+func TestCustomUrlShortening(t *testing.T) {
+	db := InitTest()
+	ctx := context.Background()
+	ctx = AddValueToContext(&ctx, "db", db)
+
+	// Test 1: Create a URL with custom short code
+	originalUrl := "http://example.com"
+	customUrl := "my-custom-url"
+	shortenReqBody := strings.NewReader(fmt.Sprintf(`{"url": "%s", "custom_url": "%s"}`, originalUrl, customUrl))
+
+	shortenReq, err := http.NewRequest("POST", "/shorten", shortenReqBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shortenReq.Header.Set("Content-Type", "application/json")
+
+	shortenRR := httptest.NewRecorder()
+	handler := http.HandlerFunc(CtxServiceHandler(shortenUrl, &ctx))
+	handler.ServeHTTP(shortenRR, shortenReq)
+
+	// Check if URL was created successfully
+	if status := shortenRR.Code; status != http.StatusCreated {
+		t.Errorf("handler returned wrong status code: got %v want %v",
+			status, http.StatusCreated)
+	}
+
+	var response map[string]string
+	if err := json.NewDecoder(shortenRR.Body).Decode(&response); err != nil {
+		t.Fatal("Failed to decode response body")
+	}
+
+	// Verify the returned short code matches our custom URL
+	if response["short_code"] != customUrl {
+		t.Errorf("Expected custom URL %s, got %s", customUrl, response["short_code"])
+	}
+
+	// Test 2: Try to create another URL with the same custom short code
+	shortenReq, _ = http.NewRequest("POST", "/shorten", shortenReqBody)
+	shortenReq.Header.Set("Content-Type", "application/json")
+	shortenRR = httptest.NewRecorder()
+	handler.ServeHTTP(shortenRR, shortenReq)
+
+	// Should get a BadRequest status
+	if status := shortenRR.Code; status != http.StatusBadRequest {
+		t.Errorf("Expected status BadRequest for duplicate custom URL, got %v", status)
+	}
+
+	// Test 3: Verify the URL works through redirection
+	redirectReq, _ := http.NewRequest("GET", "/redirect?code="+customUrl, nil)
+	redirectRR := httptest.NewRecorder()
+	redirectHandler := http.HandlerFunc(CtxServiceHandler(redirectToOriginalUrl, &ctx))
+	redirectHandler.ServeHTTP(redirectRR, redirectReq)
+
+	if status := redirectRR.Code; status != http.StatusTemporaryRedirect {
+		t.Errorf("Expected redirect status, got %v", status)
+	}
+
+	if location := redirectRR.Header().Get("Location"); location != originalUrl {
+		t.Errorf("Expected redirect to %s, got %s", originalUrl, location)
+	}
+
+	// Clean up
+	deleteUrl(&ctx, customUrl)
+}

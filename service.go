@@ -33,6 +33,7 @@ func shortenUrl(ctx *context.Context, w http.ResponseWriter, r *http.Request) {
 	var requestBody struct {
 		URL       string  `json:"url"`
 		ExpiresAt *string `json:"expires_at"`
+		CustomUrl *string `json:"custom_url"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
@@ -48,7 +49,16 @@ func shortenUrl(ctx *context.Context, w http.ResponseWriter, r *http.Request) {
 	apiKey := r.Header.Get("X-API-Key")
 	user := getUserFromApiKeyIfExists(ctx, apiKey)
 
-	shortCode := createShortCode(ctx, 0)
+	shortCode := ""
+	if requestBody.CustomUrl != nil {
+		if doesShortCodeExist(ctx, *requestBody.CustomUrl) {
+			http.Error(w, "This custom URL already exists", http.StatusBadRequest)
+			return
+		}
+		shortCode = *requestBody.CustomUrl
+	} else {
+		shortCode = createShortCode(ctx, 0)
+	}
 
 	urlShortner := &UrlShortener{OriginalUrl: requestBody.URL, ShortCode: shortCode}
 

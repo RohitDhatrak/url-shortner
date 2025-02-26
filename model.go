@@ -6,7 +6,7 @@ const MAX_RETRIES = 3
 
 type UrlShortener struct {
 	OriginalUrl string    `gorm:"not null"`
-	ShortCode   string    `gorm:"unique;not null"`
+	ShortCode   string    `gorm:"not null"`
 	Views       int       `gorm:"default:0"`
 	LastViewed  time.Time `gorm:"default:null"`
 	UserId      *uint     `gorm:"default:null;foreignKey:Id;references:Users"`
