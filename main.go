@@ -30,7 +30,9 @@ func main() {
 	http.HandleFunc("/health", health)
 	http.HandleFunc("/shorten", CtxServiceHandler(shortenUrlHandler, &ctx))
 	http.HandleFunc("/shorten/bulk", CtxServiceHandler(shortenUrlBulk, &ctx))
+	http.HandleFunc("/shorten/edit", CtxServiceHandler(editUrl, &ctx))
 	http.HandleFunc("/redirect", CtxServiceHandler(redirectToOriginalUrl, &ctx))
+	http.HandleFunc("/user/urls", CtxServiceHandler(getUserUrls, &ctx))
 
 	port := ":8080"
 	fmt.Printf("Server starting on port %s...\n", port)

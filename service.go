@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 func health(w http.ResponseWriter, r *http.Request) {
@@ -35,6 +37,7 @@ func shortenUrl(ctx *context.Context, w http.ResponseWriter, r *http.Request) {
 		URL       string  `json:"url"`
 		ExpiresAt *string `json:"expires_at"`
 		CustomUrl *string `json:"custom_url"`
+		Password  *string `json:"password"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
@@ -66,10 +69,10 @@ func shortenUrl(ctx *context.Context, w http.ResponseWriter, r *http.Request) {
 		shortCode = createShortCode(ctx, 0)
 	}
 
-	urlShortner := &UrlShortener{OriginalUrl: requestBody.URL, ShortCode: shortCode}
+	urlShortener := &UrlShortener{OriginalUrl: requestBody.URL, ShortCode: shortCode}
 
 	if user != nil {
-		urlShortner.UserId = &user.Id
+		urlShortener.UserId = &user.Id
 	}
 
 	if requestBody.ExpiresAt != nil {
@@ -78,10 +81,20 @@ func shortenUrl(ctx *context.Context, w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Invalid expiry date", http.StatusBadRequest)
 			return
 		}
-		urlShortner.ExpiresAt = expiresAt
+		urlShortener.ExpiresAt = &expiresAt
 	}
 
-	err := insertUrl(ctx, urlShortner)
+	if requestBody.Password != nil {
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(*requestBody.Password), bcrypt.DefaultCost)
+		if err != nil {
+			http.Error(w, "Error creating the short URL", http.StatusInternalServerError)
+			return
+		}
+		hashedPasswordString := string(hashedPassword)
+		urlShortener.Password = &hashedPasswordString
+	}
+
+	err := insertUrl(ctx, urlShortener)
 	if err != nil {
 		http.Error(w, "Error creating the short URL", http.StatusInternalServerError)
 		return
@@ -98,11 +111,20 @@ func shortenUrlBulk(ctx *context.Context, w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	apiKey := r.Header.Get("X-API-Key")
+	user := getUserFromApiKeyIfExists(ctx, apiKey)
+
+	if user == nil || user.Tier != "enterprise" {
+		http.Error(w, "You are not authorized to create bulk short URLs", http.StatusForbidden)
+		return
+	}
+
 	var requestBody struct {
 		URLs []struct {
 			URL       string  `json:"url"`
 			ExpiresAt *string `json:"expires_at"`
 			CustomUrl *string `json:"custom_url"`
+			Password  *string `json:"password"`
 		} `json:"urls"`
 	}
 
@@ -151,9 +173,6 @@ func shortenUrlBulk(ctx *context.Context, w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	apiKey := r.Header.Get("X-API-Key")
-	user := getUserFromApiKeyIfExists(ctx, apiKey)
-
 	shortCodes := []string{}
 	for _, urlStruct := range requestBody.URLs {
 		shortCode := ""
@@ -175,7 +194,17 @@ func shortenUrlBulk(ctx *context.Context, w http.ResponseWriter, r *http.Request
 				shortCodes = append(shortCodes, "Invalid expiry date")
 				continue
 			}
-			urlShortener.ExpiresAt = expiresAt
+			urlShortener.ExpiresAt = &expiresAt
+		}
+
+		if urlStruct.Password != nil {
+			hashedPassword, err := bcrypt.GenerateFromPassword([]byte(*urlStruct.Password), bcrypt.DefaultCost)
+			if err != nil {
+				http.Error(w, "Error creating the short URL", http.StatusInternalServerError)
+				return
+			}
+			hashedPasswordString := string(hashedPassword)
+			urlShortener.Password = &hashedPasswordString
 		}
 
 		err := insertUrl(ctx, urlShortener)
@@ -197,6 +226,40 @@ func shortenUrlBulk(ctx *context.Context, w http.ResponseWriter, r *http.Request
 	json.NewEncoder(w).Encode(map[string]string{"short_codes": string(masheledShortCodes)})
 }
 
+func editUrl(ctx *context.Context, w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var requestBody struct {
+		ShortCode string `json:"short_code"`
+		Activate  *bool  `json:"activate"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if requestBody.ShortCode == "" {
+		http.Error(w, "Short code is required", http.StatusBadRequest)
+		return
+	}
+
+	if requestBody.Activate != nil {
+		if *requestBody.Activate {
+			activateUrl(ctx, requestBody.ShortCode)
+		} else {
+			deleteUrl(ctx, requestBody.ShortCode)
+		}
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
 func redirectToOriginalUrl(ctx *context.Context, w http.ResponseWriter, r *http.Request) {
 	shortCode := r.URL.Query().Get("code")
 	if shortCode == "" {
@@ -204,13 +267,27 @@ func redirectToOriginalUrl(ctx *context.Context, w http.ResponseWriter, r *http.
 		return
 	}
 
-	originalUrl := getOriginalUrl(ctx, shortCode)
-	if originalUrl == "" {
+	urlModel := getUrlModel(ctx, shortCode)
+	if urlModel == nil {
 		http.Error(w, "Short code not found", http.StatusNotFound)
 		return
 	}
 
-	http.Redirect(w, r, originalUrl, http.StatusTemporaryRedirect)
+	if urlModel.Password != nil {
+		password := r.Header.Get("X-Password")
+		if password == "" {
+			http.Error(w, "Password is required", http.StatusBadRequest)
+			return
+		}
+
+		err := bcrypt.CompareHashAndPassword([]byte(*urlModel.Password), []byte(password))
+		if err != nil {
+			http.Error(w, "Invalid password", http.StatusUnauthorized)
+			return
+		}
+	}
+
+	http.Redirect(w, r, urlModel.OriginalUrl, http.StatusTemporaryRedirect)
 }
 
 func deleteShortCode(ctx *context.Context, w http.ResponseWriter, r *http.Request) {
@@ -247,4 +324,25 @@ func deleteShortCode(ctx *context.Context, w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(http.StatusOK)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+func getUserUrls(ctx *context.Context, w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	apiKey := r.Header.Get("X-API-Key")
+	user := getUserFromApiKeyIfExists(ctx, apiKey)
+
+	if user == nil {
+		http.Error(w, "User not found", http.StatusNotFound)
+		return
+	}
+
+	urls := getUrlsByUserId(ctx, user.Id)
+
+	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(urls)
 }

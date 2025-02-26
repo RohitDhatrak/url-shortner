@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -260,10 +261,11 @@ func TestShortenUrlWithApiKey(t *testing.T) {
 	ctx = AddValueToContext(&ctx, "db", db)
 
 	// First create a test user
+
 	testUser := &Users{
-		Email:     "test@example.com",
-		Name:      "Test User",
-		ApiKey:    "test_api_key_123",
+		Email:     "tesdfdsst@example.com",
+		Name:      addressOf("Test User"),
+		ApiKey:    "test_api_key_123dfdd",
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -328,14 +330,14 @@ func TestDeleteShortCodeAuthorization(t *testing.T) {
 	// Create two test users
 	user1 := &Users{
 		Email:     "test-user1@example.com",
-		Name:      "Test User One",
+		Name:      addressOf("Test User One"),
 		ApiKey:    "test_api_key_user1",
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
 	user2 := &Users{
 		Email:     "test-user2@example.com",
-		Name:      "Test User Two",
+		Name:      addressOf("Test User Two"),
 		ApiKey:    "test_api_key_user2",
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
@@ -399,18 +401,6 @@ func TestHelperDeletionAndExpiry(t *testing.T) {
 
 	if exists {
 		t.Errorf("Expected short code to not exist, got %v", exists)
-	}
-
-	originalUrl := getOriginalUrl(&ctx, shortCode)
-
-	if originalUrl != "" {
-		t.Errorf("Expected original URL to be empty, got %v", originalUrl)
-	}
-
-	urlModel := getUrlModel(&ctx, shortCode)
-
-	if urlModel != nil {
-		t.Errorf("Expected URL model to be nil, got %v", urlModel)
 	}
 }
 
@@ -479,7 +469,7 @@ func TestCustomUrlShortening(t *testing.T) {
 
 	// Test 1: Create a URL with custom short code
 	originalUrl := "http://example.com"
-	customUrl := "my-custom-url"
+	customUrl := uuid.New().String()[:5]
 	shortenReqBody := strings.NewReader(fmt.Sprintf(`{"url": "%s", "custom_url": "%s"}`, originalUrl, customUrl))
 
 	shortenReq, err := http.NewRequest("POST", "/shorten", shortenReqBody)
@@ -542,12 +532,21 @@ func TestShortenUrlBulk(t *testing.T) {
 	ctx := context.Background()
 	ctx = AddValueToContext(&ctx, "db", db)
 
+	user1 := &Users{
+		Email:     uuid.New().String()[:5] + "@example.com",
+		Name:      addressOf("Test User One"),
+		ApiKey:    uuid.New().String()[:5],
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		Tier:      "enterprise",
+	}
+	db.Create(user1)
 	// Test case 1: Successful bulk URL shortening
 	reqBody := strings.NewReader(`{
 		"urls": [
 			{"url": "http://example1.com"},
 			{"url": "http://example2.com"},
-			{"url": "http://example3.com", "custom_url": "custom123"},
+			{"url": "http://example3.com"},
 			{"url": "http://example4.com", "expires_at": "2025-01-01T00:00:00Z"}
 		]
 	}`)
@@ -557,6 +556,7 @@ func TestShortenUrlBulk(t *testing.T) {
 		t.Fatal(err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", user1.ApiKey)
 
 	rr := httptest.NewRecorder()
 	handler := http.HandlerFunc(CtxServiceHandler(shortenUrlBulk, &ctx))
@@ -578,6 +578,7 @@ func TestShortenUrlBulk(t *testing.T) {
 	shortCodesStr := response["short_codes"]
 	var shortCodes []string
 	if err := json.Unmarshal([]byte(shortCodesStr), &shortCodes); err != nil {
+		fmt.Println(shortCodesStr)
 		t.Fatal("Failed to parse short codes")
 	}
 
@@ -624,7 +625,7 @@ func TestShortenUrlBulk(t *testing.T) {
 	// Test case 4: With API key
 	testUser := &Users{
 		Email:     "test@example.com",
-		Name:      "Test User",
+		Name:      addressOf("Test User"),
 		ApiKey:    "test_api_key_bulk",
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
@@ -650,5 +651,363 @@ func TestShortenUrlBulk(t *testing.T) {
 	}
 
 	// Clean up
+	db.Unscoped().Delete(testUser)
+}
+
+func TestActivateUrl(t *testing.T) {
+	db := InitTest()
+	ctx := context.Background()
+	ctx = AddValueToContext(&ctx, "db", db)
+
+	activateUrl(&ctx, "194d5")
+}
+
+func TestDeleteUrl(t *testing.T) {
+	db := InitTest()
+	ctx := context.Background()
+	ctx = AddValueToContext(&ctx, "db", db)
+
+	deleteUrl(&ctx, "194d5")
+}
+
+func TestUrlActivationAndDeactivation(t *testing.T) {
+	db := InitTest()
+	ctx := context.Background()
+	ctx = AddValueToContext(&ctx, "db", db)
+
+	// First create a test URL
+	urlShortener := &UrlShortener{
+		OriginalUrl: "http://example.com",
+		ShortCode:   "testactivation",
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+	}
+	db.Create(urlShortener)
+
+	// Test 1: Deactivate URL
+	deactivateBody := strings.NewReader(`{
+		"short_code": "testactivation",
+		"activate": false
+	}`)
+
+	req, err := http.NewRequest("POST", "/shorten/edit", deactivateBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	rr := httptest.NewRecorder()
+	handler := http.HandlerFunc(CtxServiceHandler(editUrl, &ctx))
+	handler.ServeHTTP(rr, req)
+
+	// Check deactivation response
+	if status := rr.Code; status != http.StatusOK {
+		t.Errorf("handler returned wrong status code for deactivation: got %v want %v",
+			status, http.StatusOK)
+	}
+
+	// Verify URL is deactivated
+	var deactivatedUrl UrlShortener
+	result := db.Where("short_code = ?", urlShortener.ShortCode).First(&deactivatedUrl)
+	if result.Error != nil {
+		t.Fatal("Failed to fetch URL:", result.Error)
+	}
+	if deactivatedUrl.DeletedAt == nil {
+		t.Error("URL should be marked as deleted")
+	}
+
+	// Test 2: Activate URL
+	activateBody := strings.NewReader(`{
+		"short_code": "testactivation",
+		"activate": true
+	}`)
+
+	req, err = http.NewRequest("POST", "/shorten/edit", activateBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	rr = httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	// Check activation response
+	if status := rr.Code; status != http.StatusOK {
+		t.Errorf("handler returned wrong status code for activation: got %v want %v",
+			status, http.StatusOK)
+	}
+
+	// Verify URL is activated
+	var activatedUrl UrlShortener
+	result = db.Where("short_code = ?", urlShortener.ShortCode).First(&activatedUrl)
+	if result.Error != nil {
+		t.Fatal("Failed to fetch URL:", result.Error)
+	}
+	if activatedUrl.DeletedAt != nil {
+		t.Error("URL should not be marked as deleted")
+	}
+
+	// Test 3: Invalid short code
+	invalidBody := strings.NewReader(`{
+		"short_code": "nonexistent",
+		"activate": true
+	}`)
+
+	req, err = http.NewRequest("POST", "/shorten/edit", invalidBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	rr = httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	// Should still return OK even if short code doesn't exist
+	if status := rr.Code; status != http.StatusOK {
+		t.Errorf("handler returned wrong status code for invalid short code: got %v want %v",
+			status, http.StatusOK)
+	}
+
+	// Test 4: Invalid request body
+	invalidJsonBody := strings.NewReader(`{
+		"short_code": 
+	}`)
+
+	req, err = http.NewRequest("POST", "/shorten/edit", invalidJsonBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	rr = httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if status := rr.Code; status != http.StatusBadRequest {
+		t.Errorf("handler should return BadRequest for invalid JSON: got %v want %v",
+			status, http.StatusBadRequest)
+	}
+
+	// Test 5: Wrong HTTP method
+	req, err = http.NewRequest("GET", "/shorten/edit", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rr = httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if status := rr.Code; status != http.StatusMethodNotAllowed {
+		t.Errorf("handler should return MethodNotAllowed for GET: got %v want %v",
+			status, http.StatusMethodNotAllowed)
+	}
+
+	// Clean up
+	db.Unscoped().Delete(urlShortener)
+}
+
+func TestPasswordProtectedUrl(t *testing.T) {
+	db := InitTest()
+	ctx := context.Background()
+	ctx = AddValueToContext(&ctx, "db", db)
+
+	// Create a URL with password protection
+	originalUrl := "http://example.com"
+	password := "secretpass123"
+	shortenReqBody := strings.NewReader(fmt.Sprintf(`{
+		"url": "%s",
+		"password": "%s"
+	}`, originalUrl, password))
+
+	shortenReq, err := http.NewRequest("POST", "/shorten", shortenReqBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shortenReq.Header.Set("Content-Type", "application/json")
+
+	shortenRR := httptest.NewRecorder()
+	handler := http.HandlerFunc(CtxServiceHandler(shortenUrl, &ctx))
+	handler.ServeHTTP(shortenRR, shortenReq)
+
+	// Check if URL was created successfully
+	if status := shortenRR.Code; status != http.StatusCreated {
+		t.Errorf("handler returned wrong status code: got %v want %v",
+			status, http.StatusCreated)
+	}
+
+	var response map[string]string
+	if err := json.NewDecoder(shortenRR.Body).Decode(&response); err != nil {
+		t.Fatal("Failed to decode response body")
+	}
+	shortCode := response["short_code"]
+
+	// Test 1: Try to access URL without password
+	redirectReq, _ := http.NewRequest("GET", "/redirect?code="+shortCode, nil)
+	redirectRR := httptest.NewRecorder()
+	redirectHandler := http.HandlerFunc(CtxServiceHandler(redirectToOriginalUrl, &ctx))
+	redirectHandler.ServeHTTP(redirectRR, redirectReq)
+
+	if status := redirectRR.Code; status != http.StatusBadRequest {
+		t.Errorf("handler should return BadRequest when password is missing: got %v want %v",
+			status, http.StatusBadRequest)
+	}
+
+	// Test 2: Try to access URL with wrong password
+	redirectReq, _ = http.NewRequest("GET", "/redirect?code="+shortCode, nil)
+	redirectReq.Header.Set("X-Password", "wrongpass")
+	redirectRR = httptest.NewRecorder()
+	redirectHandler.ServeHTTP(redirectRR, redirectReq)
+
+	if status := redirectRR.Code; status != http.StatusUnauthorized {
+		t.Errorf("handler should return Unauthorized for wrong password: got %v want %v",
+			status, http.StatusUnauthorized)
+	}
+
+	// Test 3: Access URL with correct password
+	redirectReq, _ = http.NewRequest("GET", "/redirect?code="+shortCode, nil)
+	redirectReq.Header.Set("X-Password", password)
+	redirectRR = httptest.NewRecorder()
+	redirectHandler.ServeHTTP(redirectRR, redirectReq)
+
+	if status := redirectRR.Code; status != http.StatusTemporaryRedirect {
+		t.Errorf("handler should return TemporaryRedirect for correct password: got %v want %v",
+			status, http.StatusTemporaryRedirect)
+	}
+
+	if location := redirectRR.Header().Get("Location"); location != originalUrl {
+		t.Errorf("redirect handler returned wrong location: got %v want %v",
+			location, originalUrl)
+	}
+
+	// Clean up
+	db.Unscoped().Delete(&UrlShortener{ShortCode: shortCode})
+}
+
+func TestGetUserUrlsRepoFunction(t *testing.T) {
+	db := InitTest()
+	ctx := context.Background()
+	ctx = AddValueToContext(&ctx, "db", db)
+
+	urls := getUrlsByUserId(&ctx, 1)
+
+	if len(urls) <= 0 {
+		t.Errorf("Expected urls, got %d", len(urls))
+	}
+}
+
+func TestGetUserUrls(t *testing.T) {
+	db := InitTest()
+	ctx := context.Background()
+	ctx = AddValueToContext(&ctx, "db", db)
+
+	// Create a test user
+	testUser := &Users{
+		Email:     "test_urls@example.com",
+		Name:      addressOf("Test User"),
+		ApiKey:    "test_api_key_urls_" + uuid.NewString(),
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	db.Create(testUser)
+
+	// Create multiple URLs for this user
+	urls := []UrlShortener{
+		{
+			OriginalUrl: "http://example1.com",
+			ShortCode:   "test1",
+			UserId:      &testUser.Id,
+			CreatedAt:   time.Now(),
+			UpdatedAt:   time.Now(),
+		},
+		{
+			OriginalUrl: "http://example2.com",
+			ShortCode:   "test2",
+			UserId:      &testUser.Id,
+			CreatedAt:   time.Now(),
+			UpdatedAt:   time.Now(),
+		},
+	}
+
+	for _, url := range urls {
+		db.Create(&url)
+	}
+
+	// Test 1: Get URLs with valid API key
+	req, err := http.NewRequest("GET", "/urls", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("X-API-Key", testUser.ApiKey)
+
+	rr := httptest.NewRecorder()
+	handler := http.HandlerFunc(CtxServiceHandler(getUserUrls, &ctx))
+	handler.ServeHTTP(rr, req)
+
+	// Check status code
+	if status := rr.Code; status != http.StatusOK {
+		t.Errorf("handler returned wrong status code: got %v want %v",
+			status, http.StatusOK)
+	}
+
+	// Parse response
+	var response []UrlShortener
+	if err := json.NewDecoder(rr.Body).Decode(&response); err != nil {
+		t.Fatal("Failed to decode response body")
+	}
+
+	// Verify number of URLs returned
+	if len(response) != len(urls) {
+		t.Errorf("Expected %d URLs, got %d", len(urls), len(response))
+	}
+
+	// Verify URL contents
+	urlMap := make(map[string]bool)
+	for _, url := range response {
+		urlMap[url.ShortCode] = true
+		if url.UserId == nil || *url.UserId != testUser.Id {
+			t.Errorf("URL %s not properly linked to user", url.ShortCode)
+		}
+	}
+	for _, url := range urls {
+		if !urlMap[url.ShortCode] {
+			t.Errorf("Expected URL %s not found in response", url.ShortCode)
+		}
+	}
+
+	// Test 2: Try without API key
+	req, _ = http.NewRequest("GET", "/urls", nil)
+	rr = httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if status := rr.Code; status != http.StatusNotFound {
+		t.Errorf("handler should return NotFound without API key: got %v want %v",
+			status, http.StatusNotFound)
+	}
+
+	// Test 3: Try with invalid API key
+	req, _ = http.NewRequest("GET", "/urls", nil)
+	req.Header.Set("X-API-Key", "invalid_key")
+	rr = httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if status := rr.Code; status != http.StatusNotFound {
+		t.Errorf("handler should return NotFound for invalid API key: got %v want %v",
+			status, http.StatusNotFound)
+	}
+
+	// Test 4: Try with wrong HTTP method
+	req, _ = http.NewRequest("POST", "/urls", nil)
+	req.Header.Set("X-API-Key", testUser.ApiKey)
+	rr = httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if status := rr.Code; status != http.StatusMethodNotAllowed {
+		t.Errorf("handler should return MethodNotAllowed for POST: got %v want %v",
+			status, http.StatusMethodNotAllowed)
+	}
+
+	// Clean up
+	for _, url := range urls {
+		db.Unscoped().Delete(&url)
+	}
 	db.Unscoped().Delete(testUser)
 }

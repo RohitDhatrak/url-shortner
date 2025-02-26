@@ -108,36 +108,6 @@ func insertUrl(ctx *context.Context, urlShortener *UrlShortener) *error {
 	return nil
 }
 
-func getOriginalUrl(ctx *context.Context, shortCode string) string {
-	db := GetDbFromContext(ctx)
-
-	urlShortener := UrlShortener{}
-	result := db.
-		Where("deleted_at IS NULL").
-		Where("expires_at IS NULL OR expires_at > ?", time.Now()).
-		Find(&urlShortener, UrlShortener{ShortCode: shortCode})
-
-	if result.Error != nil {
-		return ""
-	}
-
-	newUrlShortener := UrlShortener{
-		Views:      urlShortener.Views + 1,
-		LastViewed: time.Now(),
-	}
-
-	result = db.Model(UrlShortener{}).
-		Where(UrlShortener{
-			ShortCode: urlShortener.ShortCode,
-		}).Where("deleted_at IS NULL").Updates(newUrlShortener)
-
-	if result.Error != nil {
-		return ""
-	}
-
-	return urlShortener.OriginalUrl
-}
-
 func getUrlModel(ctx *context.Context, shortCode string) *UrlShortener {
 	db := GetDbFromContext(ctx)
 
@@ -158,8 +128,9 @@ func getUrlModel(ctx *context.Context, shortCode string) *UrlShortener {
 
 func deleteUrl(ctx *context.Context, shortCode string) error {
 	db := GetDbFromContext(ctx)
+	now := time.Now()
 	newUrlShortener := UrlShortener{
-		DeletedAt: time.Now(),
+		DeletedAt: &now,
 	}
 
 	result := db.Model(UrlShortener{}).
@@ -174,15 +145,39 @@ func deleteUrl(ctx *context.Context, shortCode string) error {
 	return nil
 }
 
-func getUserFromApiKeyIfExists(ctx *context.Context, apiKey string) *Users {
+func activateUrl(ctx *context.Context, shortCode string) error {
 	db := GetDbFromContext(ctx)
 
-	user := Users{}
-	result := db.Find(&user, Users{ApiKey: apiKey})
+	result := db.Model(&UrlShortener{}).
+		Where("short_code = ?", shortCode).
+		Update("deleted_at", nil)
 
+	if result.Error != nil {
+		return result.Error
+	}
+
+	return nil
+}
+
+func getUserFromApiKeyIfExists(ctx *context.Context, apiKey string) *Users {
+	db := GetDbFromContext(ctx)
+	var user Users
+
+	result := db.Where("api_key = ?", apiKey).First(&user)
 	if result.Error != nil {
 		return nil
 	}
 
 	return &user
+}
+
+func getUrlsByUserId(ctx *context.Context, userId uint) []UrlShortener {
+	db := GetDbFromContext(ctx)
+	var urls []UrlShortener
+	db.Where("user_id = ?", userId).Find(&urls)
+	return urls
+}
+
+func addressOf[T any](v T) *T {
+	return &v
 }
