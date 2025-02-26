@@ -12,6 +12,17 @@ func health(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
+func shortenUrlHandler(ctx *context.Context, w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodPost:
+		shortenUrl(ctx, w, r)
+	case http.MethodDelete:
+		deleteShortCode(ctx, w, r)
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
 func shortenUrl(ctx *context.Context, w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -32,17 +43,16 @@ func shortenUrl(ctx *context.Context, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if doesUrlExist(ctx, requestBody.URL) {
-		shortCode := getShortCode(ctx, requestBody.URL)
-		w.WriteHeader(http.StatusCreated)
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"short_code": shortCode})
-		return
+	apiKey := r.Header.Get("X-API-Key")
+	user := getUserFromApiKeyIfExists(ctx, apiKey)
+
+	shortCode := createShortCode(ctx, 0)
+
+	urlShortner := &UrlShortener{OriginalUrl: requestBody.URL, ShortCode: shortCode}
+	if user != nil {
+		urlShortner.UserId = &user.Id
 	}
-
-	shortCode := createShortCode(ctx, requestBody.URL)
-
-	insertUrl(ctx, requestBody.URL, shortCode)
+	insertUrl(ctx, urlShortner)
 
 	w.WriteHeader(http.StatusCreated)
 	w.Header().Set("Content-Type", "application/json")
@@ -77,8 +87,17 @@ func deleteShortCode(ctx *context.Context, w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if !doesShortCodeExist(ctx, shortCode) {
+	urlModel := getUrlModel(ctx, shortCode)
+	if urlModel == nil {
 		http.Error(w, "Short code not found", http.StatusNotFound)
+		return
+	}
+
+	apiKey := r.Header.Get("X-API-Key")
+	user := getUserFromApiKeyIfExists(ctx, apiKey)
+
+	if urlModel.UserId == nil || *urlModel.UserId != user.Id {
+		http.Error(w, "You are not authorized to delete this short code", http.StatusForbidden)
 		return
 	}
 

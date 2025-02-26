@@ -28,8 +28,7 @@ func main() {
 	ctx = AddValueToContext(&ctx, "db", db)
 
 	http.HandleFunc("/health", health)
-	http.HandleFunc("/shorten", CtxServiceHandler(shortenUrl, &ctx))
-	http.HandleFunc("/shorten", CtxServiceHandler(deleteShortCode, &ctx))
+	http.HandleFunc("/shorten", CtxServiceHandler(shortenUrlHandler, &ctx))
 	http.HandleFunc("/redirect", CtxServiceHandler(redirectToOriginalUrl, &ctx))
 
 	port := ":8080"
