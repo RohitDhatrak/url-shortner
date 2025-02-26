@@ -536,3 +536,119 @@ func TestCustomUrlShortening(t *testing.T) {
 	// Clean up
 	deleteUrl(&ctx, customUrl)
 }
+
+func TestShortenUrlBulk(t *testing.T) {
+	db := InitTest()
+	ctx := context.Background()
+	ctx = AddValueToContext(&ctx, "db", db)
+
+	// Test case 1: Successful bulk URL shortening
+	reqBody := strings.NewReader(`{
+		"urls": [
+			{"url": "http://example1.com"},
+			{"url": "http://example2.com"},
+			{"url": "http://example3.com", "custom_url": "custom123"},
+			{"url": "http://example4.com", "expires_at": "2025-01-01T00:00:00Z"}
+		]
+	}`)
+
+	req, err := http.NewRequest("POST", "/shorten/bulk", reqBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	rr := httptest.NewRecorder()
+	handler := http.HandlerFunc(CtxServiceHandler(shortenUrlBulk, &ctx))
+	handler.ServeHTTP(rr, req)
+
+	// Check status code
+	if status := rr.Code; status != http.StatusCreated {
+		t.Errorf("handler returned wrong status code: got %v want %v",
+			status, http.StatusCreated)
+	}
+
+	// Parse response
+	var response map[string]string
+	if err := json.NewDecoder(rr.Body).Decode(&response); err != nil {
+		t.Fatal("Failed to decode response body")
+	}
+
+	// Verify short codes were returned
+	shortCodesStr := response["short_codes"]
+	var shortCodes []string
+	if err := json.Unmarshal([]byte(shortCodesStr), &shortCodes); err != nil {
+		t.Fatal("Failed to parse short codes")
+	}
+
+	if len(shortCodes) != 4 {
+		t.Errorf("Expected 4 short codes, got %d", len(shortCodes))
+	}
+
+	// Test case 2: Duplicate custom URLs
+	reqBody = strings.NewReader(`{
+		"urls": [
+			{"url": "http://example1.com", "custom_url": "custom123"},
+			{"url": "http://example2.com", "custom_url": "custom123"}
+		]
+	}`)
+
+	req, _ = http.NewRequest("POST", "/shorten/bulk", reqBody)
+	req.Header.Set("Content-Type", "application/json")
+	rr = httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if status := rr.Code; status != http.StatusBadRequest {
+		t.Errorf("handler should return BadRequest for duplicate custom URLs: got %v want %v",
+			status, http.StatusBadRequest)
+	}
+
+	// Test case 3: Empty URL in batch
+	reqBody = strings.NewReader(`{
+		"urls": [
+			{"url": "http://example1.com"},
+			{"url": ""}
+		]
+	}`)
+
+	req, _ = http.NewRequest("POST", "/shorten/bulk", reqBody)
+	req.Header.Set("Content-Type", "application/json")
+	rr = httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if status := rr.Code; status != http.StatusBadRequest {
+		t.Errorf("handler should return BadRequest for empty URL: got %v want %v",
+			status, http.StatusBadRequest)
+	}
+
+	// Test case 4: With API key
+	testUser := &Users{
+		Email:     "test@example.com",
+		Name:      "Test User",
+		ApiKey:    "test_api_key_bulk",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	db.Create(testUser)
+
+	reqBody = strings.NewReader(`{
+		"urls": [
+			{"url": "http://example1.com"},
+			{"url": "http://example2.com"}
+		]
+	}`)
+
+	req, _ = http.NewRequest("POST", "/shorten/bulk", reqBody)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", testUser.ApiKey)
+	rr = httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if status := rr.Code; status != http.StatusCreated {
+		t.Errorf("handler returned wrong status code: got %v want %v",
+			status, http.StatusCreated)
+	}
+
+	// Clean up
+	db.Unscoped().Delete(testUser)
+}

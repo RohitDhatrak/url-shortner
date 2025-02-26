@@ -29,6 +29,7 @@ func main() {
 
 	http.HandleFunc("/health", health)
 	http.HandleFunc("/shorten", CtxServiceHandler(shortenUrlHandler, &ctx))
+	http.HandleFunc("/shorten/bulk", CtxServiceHandler(shortenUrlBulk, &ctx))
 	http.HandleFunc("/redirect", CtxServiceHandler(redirectToOriginalUrl, &ctx))
 
 	port := ":8080"

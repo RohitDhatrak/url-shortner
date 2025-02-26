@@ -97,13 +97,15 @@ func doesShortCodeExist(ctx *context.Context, shortCode string) bool {
 	return exists > 0
 }
 
-func insertUrl(ctx *context.Context, urlShortener *UrlShortener) {
+func insertUrl(ctx *context.Context, urlShortener *UrlShortener) *error {
 	db := GetDbFromContext(ctx)
 	result := db.Create(urlShortener)
 
 	if result.Error != nil {
-		panic("Error inserting url into db")
+		return &result.Error
 	}
+
+	return nil
 }
 
 func getOriginalUrl(ctx *context.Context, shortCode string) string {
