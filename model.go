@@ -14,6 +14,7 @@ type UrlShortener struct {
 	CreatedAt   time.Time `gorm:"not null"`
 	UpdatedAt   time.Time `gorm:"not null"`
 	DeletedAt   time.Time `gorm:"default:null"`
+	ExpiresAt   time.Time `gorm:"default:null"`
 }
 
 type Users struct {

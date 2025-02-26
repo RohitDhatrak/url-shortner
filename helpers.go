@@ -84,7 +84,11 @@ func toBase36(num int64) string {
 func doesShortCodeExist(ctx *context.Context, shortCode string) bool {
 	db := GetDbFromContext(ctx)
 	var exists int64
-	result := db.Model(&UrlShortener{}).Where("short_code = ?", shortCode).Count(&exists)
+	result := db.Model(&UrlShortener{}).
+		Where("short_code = ?", shortCode).
+		Where("deleted_at IS NULL").
+		Where("expires_at IS NULL OR expires_at > ?", time.Now()).
+		Count(&exists)
 
 	if result.Error != nil {
 		return false
@@ -106,7 +110,10 @@ func getOriginalUrl(ctx *context.Context, shortCode string) string {
 	db := GetDbFromContext(ctx)
 
 	urlShortener := UrlShortener{}
-	result := db.Find(&urlShortener, UrlShortener{ShortCode: shortCode})
+	result := db.
+		Where("deleted_at IS NULL").
+		Where("expires_at IS NULL OR expires_at > ?", time.Now()).
+		Find(&urlShortener, UrlShortener{ShortCode: shortCode})
 
 	if result.Error != nil {
 		return ""
@@ -120,7 +127,7 @@ func getOriginalUrl(ctx *context.Context, shortCode string) string {
 	result = db.Model(UrlShortener{}).
 		Where(UrlShortener{
 			ShortCode: urlShortener.ShortCode,
-		}).Updates(newUrlShortener)
+		}).Where("deleted_at IS NULL").Updates(newUrlShortener)
 
 	if result.Error != nil {
 		return ""
@@ -133,7 +140,12 @@ func getUrlModel(ctx *context.Context, shortCode string) *UrlShortener {
 	db := GetDbFromContext(ctx)
 
 	urlShortener := UrlShortener{}
-	result := db.Find(&urlShortener, UrlShortener{ShortCode: shortCode})
+	result := db.
+		Model(&UrlShortener{}).
+		Where("short_code = ?", shortCode).
+		Where("deleted_at IS NULL").
+		Where("expires_at IS NULL OR expires_at > ?", time.Now()).
+		First(&urlShortener)
 
 	if result.Error != nil {
 		return nil

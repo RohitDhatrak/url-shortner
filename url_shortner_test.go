@@ -388,3 +388,86 @@ func TestDeleteShortCodeAuthorization(t *testing.T) {
 	db.Unscoped().Delete(user1)
 	db.Unscoped().Delete(user2)
 }
+
+func TestHelperDeletionAndExpiry(t *testing.T) {
+	db := InitTest()
+	ctx := context.Background()
+	ctx = AddValueToContext(&ctx, "db", db)
+
+	shortCode := "2wk9m"
+	exists := doesShortCodeExist(&ctx, shortCode)
+
+	if exists {
+		t.Errorf("Expected short code to not exist, got %v", exists)
+	}
+
+	originalUrl := getOriginalUrl(&ctx, shortCode)
+
+	if originalUrl != "" {
+		t.Errorf("Expected original URL to be empty, got %v", originalUrl)
+	}
+
+	urlModel := getUrlModel(&ctx, shortCode)
+
+	if urlModel != nil {
+		t.Errorf("Expected URL model to be nil, got %v", urlModel)
+	}
+}
+
+func TestUrlExpiration(t *testing.T) {
+	db := InitTest()
+	ctx := context.Background()
+	ctx = AddValueToContext(&ctx, "db", db)
+
+	// Create a URL that expires in 2 seconds
+	originalUrl := "http://example.com"
+	expiresAt := time.Now().Add(2 * time.Second).Format(time.RFC3339)
+	shortenReqBody := strings.NewReader(fmt.Sprintf(`{"url": "%s", "expires_at": "%s"}`, originalUrl, expiresAt))
+
+	shortenReq, err := http.NewRequest("POST", "/shorten", shortenReqBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shortenReq.Header.Set("Content-Type", "application/json")
+
+	shortenRR := httptest.NewRecorder()
+	handler := http.HandlerFunc(CtxServiceHandler(shortenUrl, &ctx))
+	handler.ServeHTTP(shortenRR, shortenReq)
+
+	// Check if URL was created successfully
+	if status := shortenRR.Code; status != http.StatusCreated {
+		t.Errorf("handler returned wrong status code: got %v want %v",
+			status, http.StatusCreated)
+	}
+
+	var response map[string]string
+	if err := json.NewDecoder(shortenRR.Body).Decode(&response); err != nil {
+		t.Fatal("Failed to decode response body")
+	}
+	shortCode := response["short_code"]
+
+	// Verify URL exists before expiration
+	exists := doesShortCodeExist(&ctx, shortCode)
+	if !exists {
+		t.Error("URL should exist before expiration")
+	}
+
+	// Wait for URL to expire
+	time.Sleep(3 * time.Second)
+
+	// Verify URL doesn't exist after expiration
+	exists = doesShortCodeExist(&ctx, shortCode)
+	if exists {
+		t.Error("URL should not exist after expiration")
+	}
+
+	// Try to access the expired URL
+	redirectReq, _ := http.NewRequest("GET", "/redirect?code="+shortCode, nil)
+	redirectRR := httptest.NewRecorder()
+	redirectHandler := http.HandlerFunc(CtxServiceHandler(redirectToOriginalUrl, &ctx))
+	redirectHandler.ServeHTTP(redirectRR, redirectReq)
+
+	if status := redirectRR.Code; status != http.StatusNotFound {
+		t.Errorf("Expected status not found for expired URL, got %v", status)
+	}
+}

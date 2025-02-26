@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"time"
 )
 
 func health(w http.ResponseWriter, r *http.Request) {
@@ -30,7 +31,8 @@ func shortenUrl(ctx *context.Context, w http.ResponseWriter, r *http.Request) {
 	}
 
 	var requestBody struct {
-		URL string `json:"url"`
+		URL       string  `json:"url"`
+		ExpiresAt *string `json:"expires_at"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
@@ -49,9 +51,20 @@ func shortenUrl(ctx *context.Context, w http.ResponseWriter, r *http.Request) {
 	shortCode := createShortCode(ctx, 0)
 
 	urlShortner := &UrlShortener{OriginalUrl: requestBody.URL, ShortCode: shortCode}
+
 	if user != nil {
 		urlShortner.UserId = &user.Id
 	}
+
+	if requestBody.ExpiresAt != nil {
+		expiresAt, err := time.Parse(time.RFC3339, *requestBody.ExpiresAt)
+		if err != nil {
+			http.Error(w, "Invalid expiry date", http.StatusBadRequest)
+			return
+		}
+		urlShortner.ExpiresAt = expiresAt
+	}
+
 	insertUrl(ctx, urlShortner)
 
 	w.WriteHeader(http.StatusCreated)
