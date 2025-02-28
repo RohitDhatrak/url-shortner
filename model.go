@@ -28,3 +28,15 @@ type Users struct {
 	UpdatedAt time.Time  `gorm:"not null"`
 	DeletedAt *time.Time `gorm:"default:null"`
 }
+
+type LogRequests struct {
+	Id        uint       `gorm:"primaryKey"`
+	Timestamp time.Time  `gorm:"not null"`
+	Method    string     `gorm:"not null"`
+	Url       string     `gorm:"not null"`
+	UserAgent string     `gorm:"not null"`
+	IpAddress string     `gorm:"not null"`
+	CreatedAt time.Time  `gorm:"not null"`
+	UpdatedAt time.Time  `gorm:"not null"`
+	DeletedAt *time.Time `gorm:"default:null"`
+}

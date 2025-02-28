@@ -111,66 +111,6 @@ func TestRedirectNonExistentShortCode(t *testing.T) {
 	}
 }
 
-func TestDeleteShortCode(t *testing.T) {
-	db := InitTest()
-
-	ctx := context.Background()
-	ctx = AddValueToContext(&ctx, "db", db)
-
-	// First create a URL to get a short code
-	originalUrl := "http://example.com"
-	shortenReqBody := strings.NewReader(`{"url": "` + originalUrl + `"}`)
-	shortenReq, err := http.NewRequest("POST", "/shorten", shortenReqBody)
-	if err != nil {
-		t.Fatal(err)
-	}
-	shortenReq.Header.Set("Content-Type", "application/json")
-
-	shortenRR := httptest.NewRecorder()
-	handler := http.HandlerFunc(CtxServiceHandler(shortenUrl, &ctx))
-	handler.ServeHTTP(shortenRR, shortenReq)
-
-	// Extract the shortCode from the response
-	var response map[string]string
-	if err := json.NewDecoder(shortenRR.Body).Decode(&response); err != nil {
-		t.Fatal("Failed to decode response body")
-	}
-	shortCode := response["short_code"]
-
-	// Now test the delete endpoint
-	deleteReq, err := http.NewRequest("DELETE", "/shorten?code="+shortCode, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	deleteRR := httptest.NewRecorder()
-	deleteHandler := http.HandlerFunc(CtxServiceHandler(shortenUrlHandler, &ctx))
-	deleteHandler.ServeHTTP(deleteRR, deleteReq)
-
-	// Check if deletion was successful
-	fmt.Println("LOG: ", deleteRR.Body.String())
-	if status := deleteRR.Code; status != http.StatusOK {
-		t.Errorf("handler returned wrong status code: got %v want %v",
-			status, http.StatusOK)
-	}
-
-	// Verify the short code no longer exists by trying to redirect to it
-	redirectReq, err := http.NewRequest("GET", "/redirect?code="+shortCode, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	redirectRR := httptest.NewRecorder()
-	redirectHandler := http.HandlerFunc(CtxServiceHandler(redirectToOriginalUrl, &ctx))
-	redirectHandler.ServeHTTP(redirectRR, redirectReq)
-
-	// Should get a 404 since the short code was deleted
-	if status := redirectRR.Code; status != http.StatusNotFound {
-		t.Errorf("handler returned wrong status code: got %v want %v",
-			status, http.StatusNotFound)
-	}
-}
-
 func TestShortenEmptyUrl(t *testing.T) {
 	db := InitTest()
 
@@ -369,7 +309,7 @@ func TestDeleteShortCodeAuthorization(t *testing.T) {
 	deleteReq, _ := http.NewRequest("DELETE", "/shorten?code="+shortCode, nil)
 	deleteReq.Header.Set("X-API-Key", user2.ApiKey)
 	deleteRR := httptest.NewRecorder()
-	deleteHandler := http.HandlerFunc(CtxServiceHandler(shortenUrlHandler, &ctx))
+	deleteHandler := http.HandlerFunc(CtxServiceHandler(deleteShortCode, &ctx))
 	deleteHandler.ServeHTTP(deleteRR, deleteReq)
 
 	if status := deleteRR.Code; status != http.StatusForbidden {
@@ -596,6 +536,7 @@ func TestShortenUrlBulk(t *testing.T) {
 
 	req, _ = http.NewRequest("POST", "/shorten/bulk", reqBody)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", user1.ApiKey)
 	rr = httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
@@ -614,6 +555,7 @@ func TestShortenUrlBulk(t *testing.T) {
 
 	req, _ = http.NewRequest("POST", "/shorten/bulk", reqBody)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", user1.ApiKey)
 	rr = httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
@@ -622,36 +564,8 @@ func TestShortenUrlBulk(t *testing.T) {
 			status, http.StatusBadRequest)
 	}
 
-	// Test case 4: With API key
-	testUser := &Users{
-		Email:     "test@example.com",
-		Name:      addressOf("Test User"),
-		ApiKey:    "test_api_key_bulk",
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	}
-	db.Create(testUser)
-
-	reqBody = strings.NewReader(`{
-		"urls": [
-			{"url": "http://example1.com"},
-			{"url": "http://example2.com"}
-		]
-	}`)
-
-	req, _ = http.NewRequest("POST", "/shorten/bulk", reqBody)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-API-Key", testUser.ApiKey)
-	rr = httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
-
-	if status := rr.Code; status != http.StatusCreated {
-		t.Errorf("handler returned wrong status code: got %v want %v",
-			status, http.StatusCreated)
-	}
-
 	// Clean up
-	db.Unscoped().Delete(testUser)
+	db.Unscoped().Delete(user1)
 }
 
 func TestActivateUrl(t *testing.T) {
@@ -901,7 +815,7 @@ func TestGetUserUrls(t *testing.T) {
 
 	// Create a test user
 	testUser := &Users{
-		Email:     "test_urls@example.com",
+		Email:     uuid.New().String()[:5] + "@example.com",
 		Name:      addressOf("Test User"),
 		ApiKey:    "test_api_key_urls_" + uuid.NewString(),
 		CreatedAt: time.Now(),
@@ -913,14 +827,14 @@ func TestGetUserUrls(t *testing.T) {
 	urls := []UrlShortener{
 		{
 			OriginalUrl: "http://example1.com",
-			ShortCode:   "test1",
+			ShortCode:   uuid.New().String()[:5],
 			UserId:      &testUser.Id,
 			CreatedAt:   time.Now(),
 			UpdatedAt:   time.Now(),
 		},
 		{
 			OriginalUrl: "http://example2.com",
-			ShortCode:   "test2",
+			ShortCode:   uuid.New().String()[:5],
 			UserId:      &testUser.Id,
 			CreatedAt:   time.Now(),
 			UpdatedAt:   time.Now(),

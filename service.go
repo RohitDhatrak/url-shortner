@@ -10,29 +10,26 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-func health(w http.ResponseWriter, r *http.Request) {
+func health(ctx *context.Context, w http.ResponseWriter, r *http.Request) {
+	db := GetDbFromContext(ctx)
+
+	result := db.Raw("SELECT 1")
+	if result.Error != nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{
+			"status":  "error",
+			"message": "Database connection failed",
+		})
+		return
+	}
+
 	w.WriteHeader(http.StatusOK)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
-func shortenUrlHandler(ctx *context.Context, w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodPost:
-		shortenUrl(ctx, w, r)
-	case http.MethodDelete:
-		deleteShortCode(ctx, w, r)
-	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
 func shortenUrl(ctx *context.Context, w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	var requestBody struct {
 		URL       string  `json:"url"`
 		ExpiresAt *string `json:"expires_at"`
@@ -106,11 +103,6 @@ func shortenUrl(ctx *context.Context, w http.ResponseWriter, r *http.Request) {
 }
 
 func shortenUrlBulk(ctx *context.Context, w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	apiKey := r.Header.Get("X-API-Key")
 	user := getUserFromApiKeyIfExists(ctx, apiKey)
 
@@ -227,11 +219,6 @@ func shortenUrlBulk(ctx *context.Context, w http.ResponseWriter, r *http.Request
 }
 
 func editUrl(ctx *context.Context, w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	var requestBody struct {
 		ShortCode string `json:"short_code"`
 		Activate  *bool  `json:"activate"`
@@ -239,6 +226,20 @@ func editUrl(ctx *context.Context, w http.ResponseWriter, r *http.Request) {
 
 	if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	urlModel := getUrlModel(ctx, requestBody.ShortCode)
+	if urlModel == nil {
+		http.Error(w, "Short code not found", http.StatusNotFound)
+		return
+	}
+
+	apiKey := r.Header.Get("X-API-Key")
+	user := getUserFromApiKeyIfExists(ctx, apiKey)
+
+	if urlModel.UserId == nil || *urlModel.UserId != user.Id {
+		http.Error(w, "You are not authorized to delete this short code", http.StatusForbidden)
 		return
 	}
 
@@ -291,11 +292,6 @@ func redirectToOriginalUrl(ctx *context.Context, w http.ResponseWriter, r *http.
 }
 
 func deleteShortCode(ctx *context.Context, w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodDelete {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	shortCode := r.URL.Query().Get("code")
 	if shortCode == "" {
 		http.Error(w, "Missing code parameter", http.StatusBadRequest)
@@ -327,11 +323,6 @@ func deleteShortCode(ctx *context.Context, w http.ResponseWriter, r *http.Reques
 }
 
 func getUserUrls(ctx *context.Context, w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	apiKey := r.Header.Get("X-API-Key")
 	user := getUserFromApiKeyIfExists(ctx, apiKey)
 
