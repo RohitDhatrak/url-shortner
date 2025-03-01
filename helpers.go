@@ -13,18 +13,22 @@ import (
 var counter uint64
 var lastCounterEpochTimestamp int64
 
-func CtxServiceHandler(serviceFunc func(ctx *context.Context, w http.ResponseWriter, r *http.Request), ctx *context.Context) func(w http.ResponseWriter, r *http.Request) {
+func ctxServiceHandler(serviceFunc func(ctx *context.Context, w http.ResponseWriter, r *http.Request), ctx *context.Context) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		serviceFunc(ctx, w, r)
 	}
 }
 
-func AddValueToContext(ctx *context.Context, key, value interface{}) context.Context {
+func addValueToContext(ctx *context.Context, key, value interface{}) context.Context {
 	return context.WithValue(*ctx, key, value)
 }
 
-func GetDbFromContext(ctx *context.Context) *gorm.DB {
+func getDbFromContext(ctx *context.Context) *gorm.DB {
 	return (*ctx).Value("db").(*gorm.DB)
+}
+
+func getUserFromContext(ctx *context.Context) *Users {
+	return (*ctx).Value("user").(*Users)
 }
 
 func createShortCode(ctx *context.Context, retryCount uint) string {
@@ -82,7 +86,7 @@ func toBase36(num int64) string {
 }
 
 func doesShortCodeExist(ctx *context.Context, shortCode string) bool {
-	db := GetDbFromContext(ctx)
+	db := getDbFromContext(ctx)
 	var exists int64
 	result := db.Model(&UrlShortener{}).
 		Where("short_code = ?", shortCode).
@@ -98,7 +102,7 @@ func doesShortCodeExist(ctx *context.Context, shortCode string) bool {
 }
 
 func insertUrl(ctx *context.Context, urlShortener *UrlShortener) *error {
-	db := GetDbFromContext(ctx)
+	db := getDbFromContext(ctx)
 	result := db.Create(urlShortener)
 
 	if result.Error != nil {
@@ -109,7 +113,7 @@ func insertUrl(ctx *context.Context, urlShortener *UrlShortener) *error {
 }
 
 func getUrlModel(ctx *context.Context, shortCode string) *UrlShortener {
-	db := GetDbFromContext(ctx)
+	db := getDbFromContext(ctx)
 
 	urlShortener := UrlShortener{}
 	result := db.
@@ -127,7 +131,7 @@ func getUrlModel(ctx *context.Context, shortCode string) *UrlShortener {
 }
 
 func deleteUrl(ctx *context.Context, shortCode string) error {
-	db := GetDbFromContext(ctx)
+	db := getDbFromContext(ctx)
 	now := time.Now()
 	newUrlShortener := UrlShortener{
 		DeletedAt: &now,
@@ -146,7 +150,7 @@ func deleteUrl(ctx *context.Context, shortCode string) error {
 }
 
 func activateUrl(ctx *context.Context, shortCode string) error {
-	db := GetDbFromContext(ctx)
+	db := getDbFromContext(ctx)
 
 	result := db.Model(&UrlShortener{}).
 		Where("short_code = ?", shortCode).
@@ -160,7 +164,7 @@ func activateUrl(ctx *context.Context, shortCode string) error {
 }
 
 func getUserFromApiKeyIfExists(ctx *context.Context, apiKey string) *Users {
-	db := GetDbFromContext(ctx)
+	db := getDbFromContext(ctx)
 	var user Users
 
 	result := db.Where("api_key = ?", apiKey).First(&user)
@@ -172,7 +176,7 @@ func getUserFromApiKeyIfExists(ctx *context.Context, apiKey string) *Users {
 }
 
 func getUrlsByUserId(ctx *context.Context, userId uint) []UrlShortener {
-	db := GetDbFromContext(ctx)
+	db := getDbFromContext(ctx)
 	var urls []UrlShortener
 	db.Where("user_id = ?", userId).Find(&urls)
 	return urls

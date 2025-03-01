@@ -28,7 +28,7 @@ func TestShortenAndRedirect(t *testing.T) {
 	db := InitTest()
 
 	ctx := context.Background()
-	ctx = AddValueToContext(&ctx, "db", db)
+	ctx = addValueToContext(&ctx, "db", db)
 
 	// Simulate a POST request with a URL in the request body
 	originalUrl := "http://example.com"
@@ -41,7 +41,7 @@ func TestShortenAndRedirect(t *testing.T) {
 
 	// Create a ResponseRecorder to record the response
 	shortenRR := httptest.NewRecorder()
-	handler := http.HandlerFunc(CtxServiceHandler(shortenUrl, &ctx))
+	handler := http.HandlerFunc(ctxServiceHandler(shortenUrl, &ctx))
 
 	// Serve the HTTP request
 	handler.ServeHTTP(shortenRR, shortenReq)
@@ -69,7 +69,7 @@ func TestShortenAndRedirect(t *testing.T) {
 
 	// Create a new ResponseRecorder for the redirect request
 	redirectRR := httptest.NewRecorder()
-	redirectHandler := http.HandlerFunc(CtxServiceHandler(redirectToOriginalUrl, &ctx))
+	redirectHandler := http.HandlerFunc(ctxServiceHandler(redirectToOriginalUrl, &ctx))
 
 	// Serve the redirect request
 	redirectHandler.ServeHTTP(redirectRR, redirectReq)
@@ -89,7 +89,7 @@ func TestRedirectNonExistentShortCode(t *testing.T) {
 	db := InitTest()
 
 	ctx := context.Background()
-	ctx = AddValueToContext(&ctx, "db", db)
+	ctx = addValueToContext(&ctx, "db", db)
 
 	// Simulate a GET request to the redirect endpoint with a non-existent short code
 	nonExistentShortCode := "nonexistent123"
@@ -100,7 +100,7 @@ func TestRedirectNonExistentShortCode(t *testing.T) {
 
 	// Create a new ResponseRecorder for the redirect request
 	redirectRR := httptest.NewRecorder()
-	redirectHandler := http.HandlerFunc(CtxServiceHandler(redirectToOriginalUrl, &ctx))
+	redirectHandler := http.HandlerFunc(ctxServiceHandler(redirectToOriginalUrl, &ctx))
 
 	// Serve the redirect request
 	redirectHandler.ServeHTTP(redirectRR, redirectReq)
@@ -115,7 +115,7 @@ func TestShortenEmptyUrl(t *testing.T) {
 	db := InitTest()
 
 	ctx := context.Background()
-	ctx = AddValueToContext(&ctx, "db", db)
+	ctx = addValueToContext(&ctx, "db", db)
 
 	// Simulate a POST request with an empty URL in the request body
 	shortenReqBody := strings.NewReader(`{"url": ""}`)
@@ -127,7 +127,7 @@ func TestShortenEmptyUrl(t *testing.T) {
 
 	// Create a ResponseRecorder to record the response
 	shortenRR := httptest.NewRecorder()
-	handler := http.HandlerFunc(CtxServiceHandler(shortenUrl, &ctx))
+	handler := http.HandlerFunc(ctxServiceHandler(shortenUrl, &ctx))
 
 	// Serve the HTTP request
 	handler.ServeHTTP(shortenRR, shortenReq)
@@ -149,7 +149,7 @@ func TestShortenEmptyUrl(t *testing.T) {
 func TestSameUrlReturnsDifferentShortCodes(t *testing.T) {
 	db := InitTest()
 	ctx := context.Background()
-	ctx = AddValueToContext(&ctx, "db", db)
+	ctx = addValueToContext(&ctx, "db", db)
 
 	// Make multiple requests with the same URL
 	originalUrl := "http://example.com"
@@ -165,7 +165,7 @@ func TestSameUrlReturnsDifferentShortCodes(t *testing.T) {
 		shortenReq.Header.Set("Content-Type", "application/json")
 
 		shortenRR := httptest.NewRecorder()
-		handler := http.HandlerFunc(CtxServiceHandler(shortenUrl, &ctx))
+		handler := http.HandlerFunc(ctxServiceHandler(shortenUrl, &ctx))
 		handler.ServeHTTP(shortenRR, shortenReq)
 
 		// Check status code
@@ -198,7 +198,7 @@ func TestSameUrlReturnsDifferentShortCodes(t *testing.T) {
 func TestShortenUrlWithApiKey(t *testing.T) {
 	db := InitTest()
 	ctx := context.Background()
-	ctx = AddValueToContext(&ctx, "db", db)
+	ctx = addValueToContext(&ctx, "db", db)
 
 	// First create a test user
 
@@ -228,7 +228,7 @@ func TestShortenUrlWithApiKey(t *testing.T) {
 
 	// Create response recorder and handle request
 	shortenRR := httptest.NewRecorder()
-	handler := http.HandlerFunc(CtxServiceHandler(shortenUrl, &ctx))
+	handler := http.HandlerFunc(ctxServiceHandler(shortenUrl, &ctx))
 	handler.ServeHTTP(shortenRR, shortenReq)
 
 	// Check status code
@@ -265,7 +265,7 @@ func TestShortenUrlWithApiKey(t *testing.T) {
 func TestDeleteShortCodeAuthorization(t *testing.T) {
 	db := InitTest()
 	ctx := context.Background()
-	ctx = AddValueToContext(&ctx, "db", db)
+	ctx = addValueToContext(&ctx, "db", db)
 
 	// Create two test users
 	user1 := &Users{
@@ -296,7 +296,7 @@ func TestDeleteShortCodeAuthorization(t *testing.T) {
 	shortenReq.Header.Set("X-API-Key", user1.ApiKey)
 
 	shortenRR := httptest.NewRecorder()
-	handler := http.HandlerFunc(CtxServiceHandler(shortenUrl, &ctx))
+	handler := http.HandlerFunc(ctxServiceHandler(shortenUrl, &ctx))
 	handler.ServeHTTP(shortenRR, shortenReq)
 
 	var response map[string]string
@@ -309,7 +309,7 @@ func TestDeleteShortCodeAuthorization(t *testing.T) {
 	deleteReq, _ := http.NewRequest("DELETE", "/shorten?code="+shortCode, nil)
 	deleteReq.Header.Set("X-API-Key", user2.ApiKey)
 	deleteRR := httptest.NewRecorder()
-	deleteHandler := http.HandlerFunc(CtxServiceHandler(deleteShortCode, &ctx))
+	deleteHandler := http.HandlerFunc(ctxServiceHandler(deleteShortCode, &ctx))
 	deleteHandler.ServeHTTP(deleteRR, deleteReq)
 
 	if status := deleteRR.Code; status != http.StatusForbidden {
@@ -334,7 +334,7 @@ func TestDeleteShortCodeAuthorization(t *testing.T) {
 func TestHelperDeletionAndExpiry(t *testing.T) {
 	db := InitTest()
 	ctx := context.Background()
-	ctx = AddValueToContext(&ctx, "db", db)
+	ctx = addValueToContext(&ctx, "db", db)
 
 	shortCode := "2wk9m"
 	exists := doesShortCodeExist(&ctx, shortCode)
@@ -347,7 +347,7 @@ func TestHelperDeletionAndExpiry(t *testing.T) {
 func TestUrlExpiration(t *testing.T) {
 	db := InitTest()
 	ctx := context.Background()
-	ctx = AddValueToContext(&ctx, "db", db)
+	ctx = addValueToContext(&ctx, "db", db)
 
 	// Create a URL that expires in 2 seconds
 	originalUrl := "http://example.com"
@@ -361,7 +361,7 @@ func TestUrlExpiration(t *testing.T) {
 	shortenReq.Header.Set("Content-Type", "application/json")
 
 	shortenRR := httptest.NewRecorder()
-	handler := http.HandlerFunc(CtxServiceHandler(shortenUrl, &ctx))
+	handler := http.HandlerFunc(ctxServiceHandler(shortenUrl, &ctx))
 	handler.ServeHTTP(shortenRR, shortenReq)
 
 	// Check if URL was created successfully
@@ -394,7 +394,7 @@ func TestUrlExpiration(t *testing.T) {
 	// Try to access the expired URL
 	redirectReq, _ := http.NewRequest("GET", "/redirect?code="+shortCode, nil)
 	redirectRR := httptest.NewRecorder()
-	redirectHandler := http.HandlerFunc(CtxServiceHandler(redirectToOriginalUrl, &ctx))
+	redirectHandler := http.HandlerFunc(ctxServiceHandler(redirectToOriginalUrl, &ctx))
 	redirectHandler.ServeHTTP(redirectRR, redirectReq)
 
 	if status := redirectRR.Code; status != http.StatusNotFound {
@@ -405,7 +405,7 @@ func TestUrlExpiration(t *testing.T) {
 func TestCustomUrlShortening(t *testing.T) {
 	db := InitTest()
 	ctx := context.Background()
-	ctx = AddValueToContext(&ctx, "db", db)
+	ctx = addValueToContext(&ctx, "db", db)
 
 	// Test 1: Create a URL with custom short code
 	originalUrl := "http://example.com"
@@ -419,7 +419,7 @@ func TestCustomUrlShortening(t *testing.T) {
 	shortenReq.Header.Set("Content-Type", "application/json")
 
 	shortenRR := httptest.NewRecorder()
-	handler := http.HandlerFunc(CtxServiceHandler(shortenUrl, &ctx))
+	handler := http.HandlerFunc(ctxServiceHandler(shortenUrl, &ctx))
 	handler.ServeHTTP(shortenRR, shortenReq)
 
 	// Check if URL was created successfully
@@ -452,7 +452,7 @@ func TestCustomUrlShortening(t *testing.T) {
 	// Test 3: Verify the URL works through redirection
 	redirectReq, _ := http.NewRequest("GET", "/redirect?code="+customUrl, nil)
 	redirectRR := httptest.NewRecorder()
-	redirectHandler := http.HandlerFunc(CtxServiceHandler(redirectToOriginalUrl, &ctx))
+	redirectHandler := http.HandlerFunc(ctxServiceHandler(redirectToOriginalUrl, &ctx))
 	redirectHandler.ServeHTTP(redirectRR, redirectReq)
 
 	if status := redirectRR.Code; status != http.StatusTemporaryRedirect {
@@ -470,7 +470,7 @@ func TestCustomUrlShortening(t *testing.T) {
 func TestShortenUrlBulk(t *testing.T) {
 	db := InitTest()
 	ctx := context.Background()
-	ctx = AddValueToContext(&ctx, "db", db)
+	ctx = addValueToContext(&ctx, "db", db)
 
 	user1 := &Users{
 		Email:     uuid.New().String()[:5] + "@example.com",
@@ -499,7 +499,7 @@ func TestShortenUrlBulk(t *testing.T) {
 	req.Header.Set("X-API-Key", user1.ApiKey)
 
 	rr := httptest.NewRecorder()
-	handler := http.HandlerFunc(CtxServiceHandler(shortenUrlBulk, &ctx))
+	handler := http.HandlerFunc(ctxServiceHandler(shortenUrlBulk, &ctx))
 	handler.ServeHTTP(rr, req)
 
 	// Check status code
@@ -571,7 +571,7 @@ func TestShortenUrlBulk(t *testing.T) {
 func TestActivateUrl(t *testing.T) {
 	db := InitTest()
 	ctx := context.Background()
-	ctx = AddValueToContext(&ctx, "db", db)
+	ctx = addValueToContext(&ctx, "db", db)
 
 	activateUrl(&ctx, "194d5")
 }
@@ -579,7 +579,7 @@ func TestActivateUrl(t *testing.T) {
 func TestDeleteUrl(t *testing.T) {
 	db := InitTest()
 	ctx := context.Background()
-	ctx = AddValueToContext(&ctx, "db", db)
+	ctx = addValueToContext(&ctx, "db", db)
 
 	deleteUrl(&ctx, "194d5")
 }
@@ -587,7 +587,7 @@ func TestDeleteUrl(t *testing.T) {
 func TestUrlActivationAndDeactivation(t *testing.T) {
 	db := InitTest()
 	ctx := context.Background()
-	ctx = AddValueToContext(&ctx, "db", db)
+	ctx = addValueToContext(&ctx, "db", db)
 
 	// First create a test URL
 	urlShortener := &UrlShortener{
@@ -611,7 +611,7 @@ func TestUrlActivationAndDeactivation(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 
 	rr := httptest.NewRecorder()
-	handler := http.HandlerFunc(CtxServiceHandler(editUrl, &ctx))
+	handler := http.HandlerFunc(ctxServiceHandler(editUrl, &ctx))
 	handler.ServeHTTP(rr, req)
 
 	// Check deactivation response
@@ -722,7 +722,7 @@ func TestUrlActivationAndDeactivation(t *testing.T) {
 func TestPasswordProtectedUrl(t *testing.T) {
 	db := InitTest()
 	ctx := context.Background()
-	ctx = AddValueToContext(&ctx, "db", db)
+	ctx = addValueToContext(&ctx, "db", db)
 
 	// Create a URL with password protection
 	originalUrl := "http://example.com"
@@ -739,7 +739,7 @@ func TestPasswordProtectedUrl(t *testing.T) {
 	shortenReq.Header.Set("Content-Type", "application/json")
 
 	shortenRR := httptest.NewRecorder()
-	handler := http.HandlerFunc(CtxServiceHandler(shortenUrl, &ctx))
+	handler := http.HandlerFunc(ctxServiceHandler(shortenUrl, &ctx))
 	handler.ServeHTTP(shortenRR, shortenReq)
 
 	// Check if URL was created successfully
@@ -757,7 +757,7 @@ func TestPasswordProtectedUrl(t *testing.T) {
 	// Test 1: Try to access URL without password
 	redirectReq, _ := http.NewRequest("GET", "/redirect?code="+shortCode, nil)
 	redirectRR := httptest.NewRecorder()
-	redirectHandler := http.HandlerFunc(CtxServiceHandler(redirectToOriginalUrl, &ctx))
+	redirectHandler := http.HandlerFunc(ctxServiceHandler(redirectToOriginalUrl, &ctx))
 	redirectHandler.ServeHTTP(redirectRR, redirectReq)
 
 	if status := redirectRR.Code; status != http.StatusBadRequest {
@@ -799,7 +799,7 @@ func TestPasswordProtectedUrl(t *testing.T) {
 func TestGetUserUrlsRepoFunction(t *testing.T) {
 	db := InitTest()
 	ctx := context.Background()
-	ctx = AddValueToContext(&ctx, "db", db)
+	ctx = addValueToContext(&ctx, "db", db)
 
 	urls := getUrlsByUserId(&ctx, 1)
 
@@ -811,7 +811,7 @@ func TestGetUserUrlsRepoFunction(t *testing.T) {
 func TestGetUserUrls(t *testing.T) {
 	db := InitTest()
 	ctx := context.Background()
-	ctx = AddValueToContext(&ctx, "db", db)
+	ctx = addValueToContext(&ctx, "db", db)
 
 	// Create a test user
 	testUser := &Users{
@@ -853,7 +853,7 @@ func TestGetUserUrls(t *testing.T) {
 	req.Header.Set("X-API-Key", testUser.ApiKey)
 
 	rr := httptest.NewRecorder()
-	handler := http.HandlerFunc(CtxServiceHandler(getUserUrls, &ctx))
+	handler := http.HandlerFunc(ctxServiceHandler(getUserUrls, &ctx))
 	handler.ServeHTTP(rr, req)
 
 	// Check status code

@@ -11,7 +11,7 @@ import (
 )
 
 func health(ctx *context.Context, w http.ResponseWriter, r *http.Request) {
-	db := GetDbFromContext(ctx)
+	db := getDbFromContext(ctx)
 
 	result := db.Raw("SELECT 1")
 	if result.Error != nil {
@@ -103,13 +103,7 @@ func shortenUrl(ctx *context.Context, w http.ResponseWriter, r *http.Request) {
 }
 
 func shortenUrlBulk(ctx *context.Context, w http.ResponseWriter, r *http.Request) {
-	apiKey := r.Header.Get("X-API-Key")
-	user := getUserFromApiKeyIfExists(ctx, apiKey)
-
-	if user == nil || user.Tier != "enterprise" {
-		http.Error(w, "You are not authorized to create bulk short URLs", http.StatusForbidden)
-		return
-	}
+	user := getUserFromContext(ctx)
 
 	var requestBody struct {
 		URLs []struct {
@@ -235,8 +229,7 @@ func editUrl(ctx *context.Context, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	apiKey := r.Header.Get("X-API-Key")
-	user := getUserFromApiKeyIfExists(ctx, apiKey)
+	user := getUserFromContext(ctx)
 
 	if urlModel.UserId == nil || *urlModel.UserId != user.Id {
 		http.Error(w, "You are not authorized to delete this short code", http.StatusForbidden)
@@ -304,8 +297,7 @@ func deleteShortCode(ctx *context.Context, w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	apiKey := r.Header.Get("X-API-Key")
-	user := getUserFromApiKeyIfExists(ctx, apiKey)
+	user := getUserFromContext(ctx)
 
 	if urlModel.UserId == nil || *urlModel.UserId != user.Id {
 		http.Error(w, "You are not authorized to delete this short code", http.StatusForbidden)
@@ -323,8 +315,7 @@ func deleteShortCode(ctx *context.Context, w http.ResponseWriter, r *http.Reques
 }
 
 func getUserUrls(ctx *context.Context, w http.ResponseWriter, r *http.Request) {
-	apiKey := r.Header.Get("X-API-Key")
-	user := getUserFromApiKeyIfExists(ctx, apiKey)
+	user := getUserFromContext(ctx)
 
 	if user == nil {
 		http.Error(w, "User not found", http.StatusNotFound)
