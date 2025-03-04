@@ -185,3 +185,39 @@ func getUrlsByUserId(ctx *context.Context, userId uint) []UrlShortener {
 func addressOf[T any](v T) *T {
 	return &v
 }
+
+func newResponseWriter(w http.ResponseWriter) *CustomResponseWriter {
+	return &CustomResponseWriter{
+		ResponseWriter: w,
+		headers:        make(http.Header),
+		statusCode:     http.StatusOK,
+	}
+}
+
+func (rw *CustomResponseWriter) Header() http.Header {
+	return rw.headers
+}
+
+func (rw *CustomResponseWriter) WriteHeader(statusCode int) {
+	rw.statusCode = statusCode
+}
+
+func (rw *CustomResponseWriter) Write(b []byte) (int, error) {
+	rw.body = append(rw.body, b...)
+	return len(b), nil
+}
+
+func (rw *CustomResponseWriter) Flush() {
+	// Copy all headers to the original response writer
+	for k, v := range rw.headers {
+		for _, val := range v {
+			rw.ResponseWriter.Header().Add(k, val)
+		}
+	}
+
+	// Write the status code
+	rw.ResponseWriter.WriteHeader(rw.statusCode)
+
+	// Write the body
+	rw.ResponseWriter.Write(rw.body)
+}

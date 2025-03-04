@@ -604,7 +604,7 @@ func TestUrlActivationAndDeactivation(t *testing.T) {
 		"activate": false
 	}`)
 
-	req, err := http.NewRequest("POST", "/shorten/edit", deactivateBody)
+	req, err := http.NewRequest("POST", "/shorten", deactivateBody)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -636,7 +636,7 @@ func TestUrlActivationAndDeactivation(t *testing.T) {
 		"activate": true
 	}`)
 
-	req, err = http.NewRequest("POST", "/shorten/edit", activateBody)
+	req, err = http.NewRequest("POST", "/shorten", activateBody)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -667,7 +667,7 @@ func TestUrlActivationAndDeactivation(t *testing.T) {
 		"activate": true
 	}`)
 
-	req, err = http.NewRequest("POST", "/shorten/edit", invalidBody)
+	req, err = http.NewRequest("POST", "/shorten", invalidBody)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -687,7 +687,7 @@ func TestUrlActivationAndDeactivation(t *testing.T) {
 		"short_code": 
 	}`)
 
-	req, err = http.NewRequest("POST", "/shorten/edit", invalidJsonBody)
+	req, err = http.NewRequest("POST", "/shorten", invalidJsonBody)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -702,7 +702,7 @@ func TestUrlActivationAndDeactivation(t *testing.T) {
 	}
 
 	// Test 5: Wrong HTTP method
-	req, err = http.NewRequest("GET", "/shorten/edit", nil)
+	req, err = http.NewRequest("GET", "/shorten", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

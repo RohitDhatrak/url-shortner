@@ -23,6 +23,13 @@ var (
 	lastBlocklistLoad time.Time
 )
 
+type CustomResponseWriter struct {
+	http.ResponseWriter
+	headers    http.Header
+	body       []byte
+	statusCode int
+}
+
 func main() {
 	err := os.MkdirAll("db", 0755)
 	if err != nil {
@@ -38,6 +45,7 @@ func main() {
 	ctx = addValueToContext(&ctx, "db", db)
 
 	unauthenticatedRouter := mux.NewRouter()
+	unauthenticatedRouter.Use(responseTimeMiddleware())
 	unauthenticatedRouter.Use(loggingMiddleware(&ctx))
 	unauthenticatedRouter.Use(blocklistMiddleware())
 
@@ -52,7 +60,7 @@ func main() {
 	unauthenticatedRouter.HandleFunc("/redirect", ctxServiceHandler(redirectToOriginalUrl, &ctx)).Methods("GET")
 
 	authenticatedRouter.HandleFunc("/shorten", ctxServiceHandler(deleteShortCode, &ctx)).Methods("DELETE")
-	authenticatedRouter.HandleFunc("/shorten/edit", ctxServiceHandler(editUrl, &ctx)).Methods("PUT")
+	authenticatedRouter.HandleFunc("/shorten", ctxServiceHandler(editUrl, &ctx)).Methods("PUT")
 	authenticatedRouter.HandleFunc("/user/urls", ctxServiceHandler(getUserUrls, &ctx)).Methods("GET")
 
 	pricingRouter.HandleFunc("/shorten/bulk", ctxServiceHandler(shortenUrlBulk, &ctx)).Methods("POST")
@@ -62,6 +70,24 @@ func main() {
 
 	if err := http.ListenAndServe(port, unauthenticatedRouter); err != nil {
 		log.Fatal("Error starting server: ", err)
+	}
+}
+
+func responseTimeMiddleware() mux.MiddlewareFunc {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			wrapper := newResponseWriter(w)
+
+			startTime := time.Now()
+
+			next.ServeHTTP(wrapper, r)
+
+			elapsedTime := time.Since(startTime)
+
+			wrapper.Header().Set("X-Response-Time", elapsedTime.String())
+
+			wrapper.Flush()
+		})
 	}
 }
 

@@ -10,6 +10,8 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+var cachedUrls = make(map[string]*UrlShortener)
+
 func health(ctx *context.Context, w http.ResponseWriter, r *http.Request) {
 	db := getDbFromContext(ctx)
 
@@ -261,10 +263,16 @@ func redirectToOriginalUrl(ctx *context.Context, w http.ResponseWriter, r *http.
 		return
 	}
 
-	urlModel := getUrlModel(ctx, shortCode)
-	if urlModel == nil {
-		http.Error(w, "Short code not found", http.StatusNotFound)
-		return
+	urlModel, doesExist := cachedUrls[shortCode]
+	if !doesExist {
+		urlModel = getUrlModel(ctx, shortCode)
+
+		if urlModel == nil {
+			http.Error(w, "Short code not found", http.StatusNotFound)
+			return
+		}
+
+		cachedUrls[shortCode] = urlModel
 	}
 
 	if urlModel.Password != nil {
