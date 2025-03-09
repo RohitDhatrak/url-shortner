@@ -28,7 +28,12 @@ func getDbFromContext(ctx *context.Context) *gorm.DB {
 }
 
 func getUserFromContext(ctx *context.Context) *Users {
-	return (*ctx).Value("user").(*Users)
+	user := (*ctx).Value("user")
+	if user == nil {
+		return nil
+	}
+
+	return user.(*Users)
 }
 
 func createShortCode(ctx *context.Context, retryCount uint) string {
