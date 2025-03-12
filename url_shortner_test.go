@@ -976,8 +976,8 @@ func TestRedirectCaching(t *testing.T) {
 	ctx := context.Background()
 	ctx = addValueToContext(&ctx, "db", db)
 
-	// Clear the cache before starting the test
-	cachedUrls = make(map[string]*UrlShortener)
+	// Initialize Redis client for testing
+	initRedis()
 
 	// Create a test URL
 	originalUrl := "http://example.com/caching-test"
@@ -1004,12 +1004,16 @@ func TestRedirectCaching(t *testing.T) {
 	}
 	shortCode := response["short_code"]
 
-	// Verify cache is empty before first request
-	if _, exists := cachedUrls[shortCode]; exists {
-		t.Error("URL should not be in cache before first request")
+	// Verify Redis cache is empty before first request
+	cachedUrl, err := getCachedUrl(shortCode)
+	if err != nil {
+		t.Fatalf("Error checking Redis cache: %v", err)
+	}
+	if cachedUrl != nil {
+		t.Error("URL should not be in Redis cache before first request")
 	}
 
-	// First request - should hit the database and populate the cache
+	// First request - should hit the database and populate the Redis cache
 	redirectReq1, _ := http.NewRequest("GET", "/redirect?code="+shortCode, nil)
 	redirectRR1 := httptest.NewRecorder()
 	redirectHandler := http.HandlerFunc(ctxServiceHandler(redirectToOriginalUrl, &ctx))
@@ -1020,23 +1024,27 @@ func TestRedirectCaching(t *testing.T) {
 		t.Errorf("First request failed with status: %v", status)
 	}
 
-	// Verify URL was cached after first request
-	if _, exists := cachedUrls[shortCode]; !exists {
-		t.Error("URL was not cached after first request")
+	// Verify URL was cached in Redis after first request
+	cachedUrl, err = getCachedUrl(shortCode)
+	if err != nil {
+		t.Fatalf("Error checking Redis cache: %v", err)
+	}
+	if cachedUrl == nil {
+		t.Error("URL was not cached in Redis after first request")
 	}
 
-	// Delete the URL from the database to ensure subsequent requests use the cache
+	// Delete the URL from the database to ensure subsequent requests use the Redis cache
 	var urlModel UrlShortener
 	db.Unscoped().Where("short_code = ?", shortCode).Delete(&urlModel)
 
-	// Second request - should use cache since the DB record is gone
+	// Second request - should use Redis cache since the DB record is gone
 	redirectReq2, _ := http.NewRequest("GET", "/redirect?code="+shortCode, nil)
 	redirectRR2 := httptest.NewRecorder()
 	redirectHandler.ServeHTTP(redirectRR2, redirectReq2)
 
-	// Verify second request was successful (should use cache)
+	// Verify second request was successful (should use Redis cache)
 	if status := redirectRR2.Code; status != http.StatusTemporaryRedirect {
-		t.Errorf("Second request failed with status: %v, expected %v (should use cache)",
+		t.Errorf("Second request failed with status: %v, expected %v (should use Redis cache)",
 			status, http.StatusTemporaryRedirect)
 	}
 
@@ -1048,16 +1056,76 @@ func TestRedirectCaching(t *testing.T) {
 			location1, location2, originalUrl)
 	}
 
-	// Verify that if we clear the cache and try again, it fails (proving we were using the cache)
-	cachedUrls = make(map[string]*UrlShortener)
+	// Verify that if we clear the Redis cache and try again, it fails (proving we were using the cache)
+	err = removeCachedUrl(shortCode)
+	if err != nil {
+		t.Fatalf("Error clearing Redis cache: %v", err)
+	}
+
+	// Verify the cache is now empty
+	cachedUrl, err = getCachedUrl(shortCode)
+	if err != nil {
+		t.Fatalf("Error checking Redis cache: %v", err)
+	}
+	if cachedUrl != nil {
+		t.Error("URL should not be in Redis cache after clearing")
+	}
+
+	// Third request - should fail since DB record is gone and Redis cache is cleared
 	redirectReq3, _ := http.NewRequest("GET", "/redirect?code="+shortCode, nil)
 	redirectRR3 := httptest.NewRecorder()
 	redirectHandler.ServeHTTP(redirectRR3, redirectReq3)
 
-	// This should fail with 404 since the DB record is gone and cache is cleared
+	// This should fail with 404 since the DB record is gone and Redis cache is cleared
 	if status := redirectRR3.Code; status != http.StatusNotFound {
-		t.Errorf("Third request should fail with NotFound after cache cleared: got %v", status)
+		t.Errorf("Third request should fail with NotFound after Redis cache cleared: got %v", status)
 	}
+
+	// Test updating the cache
+	// Create a new URL in the database
+	newUrlModel := &UrlShortener{
+		OriginalUrl: "http://updated-example.com",
+		ShortCode:   shortCode,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+	}
+	db.Create(newUrlModel)
+
+	// Cache the URL
+	err = cacheUrl(shortCode, newUrlModel)
+	if err != nil {
+		t.Fatalf("Error caching URL: %v", err)
+	}
+
+	// Update the URL in the cache
+	updatedUrlModel := &UrlShortener{
+		OriginalUrl: "http://updated-again-example.com",
+		ShortCode:   shortCode,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+	}
+
+	// Update the cache
+	err = updateCachedUrl(shortCode, updatedUrlModel)
+	if err != nil {
+		t.Fatalf("Error updating cached URL: %v", err)
+	}
+
+	// Verify the cache was updated
+	cachedUrl, err = getCachedUrl(shortCode)
+	if err != nil {
+		t.Fatalf("Error checking Redis cache: %v", err)
+	}
+	if cachedUrl == nil {
+		t.Error("URL should be in Redis cache after updating")
+	}
+	if cachedUrl.OriginalUrl != updatedUrlModel.OriginalUrl {
+		t.Errorf("Expected updated URL %s, got %s", updatedUrlModel.OriginalUrl, cachedUrl.OriginalUrl)
+	}
+
+	// Clean up
+	removeCachedUrl(shortCode)
+	db.Unscoped().Delete(&UrlShortener{ShortCode: shortCode})
 }
 
 // oha -c 100 -q 100 -z 20s -m POST http://localhost:8080/redirect?code=32d1t

@@ -10,8 +10,6 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-var cachedUrls = make(map[string]*UrlShortener)
-
 func health(ctx *context.Context, w http.ResponseWriter, r *http.Request) {
 	db := getDbFromContext(ctx)
 
@@ -251,6 +249,12 @@ func editUrl(ctx *context.Context, w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	err := updateCachedUrl(requestBody.ShortCode, urlModel)
+	if err != nil {
+		http.Error(w, "Error updating cached URL", http.StatusInternalServerError)
+		return
+	}
+
 	w.WriteHeader(http.StatusOK)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
@@ -263,8 +267,13 @@ func redirectToOriginalUrl(ctx *context.Context, w http.ResponseWriter, r *http.
 		return
 	}
 
-	urlModel, doesExist := cachedUrls[shortCode]
-	if !doesExist {
+	urlModel, err := getCachedUrl(shortCode)
+	if err != nil {
+		http.Error(w, "Error getting cached URL", http.StatusInternalServerError)
+		return
+	}
+
+	if urlModel == nil {
 		urlModel = getUrlModel(ctx, shortCode)
 
 		if urlModel == nil {
@@ -272,7 +281,11 @@ func redirectToOriginalUrl(ctx *context.Context, w http.ResponseWriter, r *http.
 			return
 		}
 
-		cachedUrls[shortCode] = urlModel
+		err = cacheUrl(shortCode, urlModel)
+		if err != nil {
+			http.Error(w, "Error caching URL", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	if urlModel.Password != nil {
@@ -314,6 +327,12 @@ func deleteShortCode(ctx *context.Context, w http.ResponseWriter, r *http.Reques
 
 	if err := deleteUrl(ctx, shortCode); err != nil {
 		http.Error(w, "Error deleting short code", http.StatusInternalServerError)
+		return
+	}
+
+	err := removeCachedUrl(shortCode)
+	if err != nil {
+		http.Error(w, "Error removing cached URL", http.StatusInternalServerError)
 		return
 	}
 

@@ -13,6 +13,7 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
+	"github.com/go-redis/redis"
 	"github.com/gorilla/mux"
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -30,6 +31,16 @@ type CustomResponseWriter struct {
 	statusCode int
 }
 
+var redisClient *redis.Client
+
+func initRedis() {
+	redisClient = redis.NewClient(&redis.Options{
+		Addr:     "localhost:6379", // Redis server address
+		Password: "",               // No password by default
+		DB:       0,                // Default DB
+	})
+}
+
 func main() {
 	err := os.MkdirAll("db", 0755)
 	if err != nil {
@@ -40,6 +51,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	initRedis()
 
 	ctx := context.Background()
 	ctx = addValueToContext(&ctx, "db", db)

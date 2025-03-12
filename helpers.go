@@ -1,12 +1,14 @@
 package main
 
 import (
+	"encoding/json"
 	"net/http"
 	"sync/atomic"
 	"time"
 
 	"context"
 
+	"github.com/go-redis/redis"
 	"gorm.io/gorm"
 )
 
@@ -225,4 +227,52 @@ func (rw *CustomResponseWriter) Flush() {
 
 	// Write the body
 	rw.ResponseWriter.Write(rw.body)
+}
+
+func cacheUrl(shortCode string, urlModel *UrlShortener) error {
+	data, err := json.Marshal(urlModel)
+	if err != nil {
+		return err
+	}
+
+	expiration := 24 * time.Hour
+	if urlModel.ExpiresAt != nil {
+		expiration = time.Until(*urlModel.ExpiresAt)
+		if expiration <= 0 {
+			return nil
+		}
+	}
+
+	return redisClient.Set(shortCode, data, expiration).Err()
+}
+
+func getCachedUrl(shortCode string) (*UrlShortener, error) {
+	data, err := redisClient.Get(shortCode).Bytes()
+	if err != nil {
+		if err == redis.Nil {
+			// Key does not exist
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	var urlModel UrlShortener
+	if err := json.Unmarshal(data, &urlModel); err != nil {
+		return nil, err
+	}
+
+	return &urlModel, nil
+}
+
+func removeCachedUrl(shortCode string) error {
+	return redisClient.Del(shortCode).Err()
+}
+
+func updateCachedUrl(shortCode string, urlModel *UrlShortener) error {
+	err := removeCachedUrl(shortCode)
+	if err != nil {
+		return err
+	}
+
+	return cacheUrl(shortCode, urlModel)
 }
