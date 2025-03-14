@@ -275,9 +275,15 @@ func removeCachedUrl(shortCode string) error {
 }
 
 func updateCachedUrl(shortCode string, urlModel *UrlShortener) error {
+	cachedUrl, _ := getCachedUrl(shortCode)
+
 	err := removeCachedUrl(shortCode)
 	if err != nil {
 		return err
+	}
+
+	if cachedUrl == nil {
+		return nil
 	}
 
 	return cacheUrl(shortCode, urlModel)
