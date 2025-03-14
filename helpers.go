@@ -95,6 +95,12 @@ func toBase36(num int64) string {
 func doesShortCodeExist(ctx *context.Context, shortCode string) bool {
 	db := getDbFromContext(ctx)
 	var exists int64
+
+	urlModel, _ := getCachedUrl(shortCode)
+	if urlModel != nil {
+		return true
+	}
+
 	result := db.Model(&UrlShortener{}).
 		Where("short_code = ?", shortCode).
 		Where("deleted_at IS NULL").

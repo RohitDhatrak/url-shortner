@@ -1128,4 +1128,136 @@ func TestRedirectCaching(t *testing.T) {
 	db.Unscoped().Delete(&UrlShortener{ShortCode: shortCode})
 }
 
-// oha -c 100 -q 100 -z 20s -m POST http://localhost:8080/redirect?code=32d1t
+func TestIpRateLimitMiddleware(t *testing.T) {
+	// Initialize Redis for testing
+	initRedis()
+
+	// Create a simple test handler that always returns 200 OK
+	testHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	})
+
+	// Apply the rate limit middleware to the test handler
+	handler := ipRateLimitMiddleware()(testHandler)
+
+	// Test cases for different endpoints
+	testCases := []struct {
+		name           string
+		path           string
+		requestCount   int
+		rateLimit      int64
+		expectedStatus int
+	}{
+		{
+			name:           "Redirect endpoint under limit",
+			path:           "/redirect",
+			requestCount:   45,
+			rateLimit:      50,
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:           "Redirect endpoint over limit",
+			path:           "/redirect",
+			requestCount:   55,
+			rateLimit:      50,
+			expectedStatus: http.StatusTooManyRequests,
+		},
+		{
+			name:           "Shorten endpoint under limit",
+			path:           "/shorten",
+			requestCount:   8,
+			rateLimit:      10,
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:           "Shorten endpoint over limit",
+			path:           "/shorten",
+			requestCount:   12,
+			rateLimit:      10,
+			expectedStatus: http.StatusTooManyRequests,
+		},
+		{
+			name:           "Default endpoint under limit",
+			path:           "/other",
+			requestCount:   90,
+			rateLimit:      100,
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:           "Default endpoint over limit",
+			path:           "/other",
+			requestCount:   110,
+			rateLimit:      100,
+			expectedStatus: http.StatusTooManyRequests,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Generate a unique IP for this test to avoid interference between test cases
+			testIP := fmt.Sprintf("test-ip-%s-%d", tc.path, time.Now().UnixNano())
+
+			// Clear any existing rate limit data for this test IP
+			redisKey := ""
+			if tc.path == "/redirect" {
+				redisKey = "redirect:" + testIP
+			} else if tc.path == "/shorten" {
+				redisKey = "shorten:" + testIP
+			} else {
+				redisKey = "default:" + testIP
+			}
+			redisClient.Del(redisKey)
+
+			// Make requests up to the specified count
+			var lastStatus int
+			for i := 1; i <= tc.requestCount; i++ {
+				req, err := http.NewRequest("GET", tc.path, nil)
+				if err != nil {
+					t.Fatalf("Failed to create request: %v", err)
+				}
+
+				// Set the remote address to our test IP
+				req.RemoteAddr = testIP
+
+				rr := httptest.NewRecorder()
+				handler.ServeHTTP(rr, req)
+				lastStatus = rr.Code
+
+				// Add a small delay to avoid overwhelming Redis
+				time.Sleep(1 * time.Millisecond)
+			}
+
+			// Check if the last request had the expected status code
+			if lastStatus != tc.expectedStatus {
+				t.Errorf("Expected status %d after %d requests, got %d",
+					tc.expectedStatus, tc.requestCount, lastStatus)
+			}
+
+			// If we're testing over the limit, also verify that after waiting for the rate limit window
+			// to expire, we can make requests again
+			if tc.expectedStatus == http.StatusTooManyRequests {
+				// Wait for the rate limit window to expire (slightly longer than the window)
+				if tc.path == "/redirect" || tc.path == "/shorten" {
+					time.Sleep(1 * time.Second) // 1.1 seconds for 1 second window
+				} else {
+					time.Sleep(1 * time.Minute) // We'll use a shorter wait for testing
+				}
+
+				// Try one more request, which should now succeed
+				req, _ := http.NewRequest("GET", tc.path, nil)
+				req.RemoteAddr = testIP
+				rr := httptest.NewRecorder()
+				handler.ServeHTTP(rr, req)
+
+				if rr.Code != http.StatusOK {
+					t.Errorf("Expected status %d after rate limit window expired, got %d",
+						http.StatusOK, rr.Code)
+				}
+			}
+
+			// Clean up
+			redisClient.Del(redisKey)
+		})
+	}
+}

@@ -60,6 +60,7 @@ func main() {
 	unauthenticatedRouter.Use(responseTimeMiddleware())
 	unauthenticatedRouter.Use(loggingMiddleware(&ctx))
 	unauthenticatedRouter.Use(blocklistMiddleware())
+	unauthenticatedRouter.Use(ipRateLimitMiddleware())
 
 	authenticatedRouter := unauthenticatedRouter.PathPrefix("").Subrouter()
 	authenticatedRouter.Use(apiKeyMiddleware(&ctx))
@@ -178,6 +179,56 @@ func blocklistMiddleware() mux.MiddlewareFunc {
 
 			if isBlocked {
 				http.Error(w, "API key is blocked", http.StatusUnauthorized)
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+func ipRateLimitMiddleware() mux.MiddlewareFunc {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ip := r.RemoteAddr
+
+			var redisKey string
+			var rateLimit int64
+
+			if r.URL.Path == "/redirect" {
+				redisKey = "redirect:" + ip
+				rateLimit = 50
+			} else if r.URL.Path == "/shorten" {
+				redisKey = "shorten:" + ip
+				rateLimit = 10
+			} else {
+				redisKey = "default:" + ip
+				rateLimit = 100
+			}
+
+			count, err := redisClient.Incr(redisKey).Result()
+			if err != nil {
+				http.Error(w, "Error incrementing request count", http.StatusInternalServerError)
+				return
+			}
+
+			if count == 1 {
+				var expiry time.Duration
+				if r.URL.Path == "/redirect" || r.URL.Path == "/shorten" {
+					expiry = 1 * time.Second
+				} else {
+					expiry = 1 * time.Minute
+				}
+
+				err = redisClient.Expire(redisKey, expiry).Err()
+				if err != nil {
+					http.Error(w, "Error setting expiry", http.StatusInternalServerError)
+					return
+				}
+			}
+
+			if count > rateLimit {
+				http.Error(w, "Too many requests", http.StatusTooManyRequests)
 				return
 			}
 
