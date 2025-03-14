@@ -61,6 +61,7 @@ func main() {
 	unauthenticatedRouter.Use(loggingMiddleware(&ctx))
 	unauthenticatedRouter.Use(blocklistMiddleware())
 	unauthenticatedRouter.Use(ipRateLimitMiddleware())
+	unauthenticatedRouter.Use(freeTierRateLimitMiddleware(&ctx))
 
 	authenticatedRouter := unauthenticatedRouter.PathPrefix("").Subrouter()
 	authenticatedRouter.Use(apiKeyMiddleware(&ctx))
@@ -237,6 +238,47 @@ func ipRateLimitMiddleware() mux.MiddlewareFunc {
 	}
 }
 
+func freeTierRateLimitMiddleware(ctx *context.Context) mux.MiddlewareFunc {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			apiKey := r.Header.Get("X-API-Key")
+
+			if apiKey != "" {
+				user := getUserFromApiKeyIfExists(ctx, apiKey)
+
+				if user != nil {
+					*ctx = addValueToContext(ctx, "user", user)
+
+					if user.Tier == "free" {
+						redisKey := fmt.Sprintf("free_tier:%d", user.Id)
+
+						count, err := redisClient.Incr(redisKey).Result()
+						if err != nil {
+							http.Error(w, "Error tracking request count", http.StatusInternalServerError)
+							return
+						}
+
+						if count == 1 {
+							err = redisClient.Expire(redisKey, 60*time.Second).Err()
+							if err != nil {
+								http.Error(w, "Error setting rate limit expiry", http.StatusInternalServerError)
+								return
+							}
+						}
+
+						if count > 5 {
+							w.Header().Set("Content-Type", "application/json")
+							http.Error(w, "Too many requests", http.StatusTooManyRequests)
+						}
+					}
+				}
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 func apiKeyMiddleware(ctx *context.Context) mux.MiddlewareFunc {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -247,14 +289,12 @@ func apiKeyMiddleware(ctx *context.Context) mux.MiddlewareFunc {
 				return
 			}
 
-			user := getUserFromApiKeyIfExists(ctx, apiKey)
+			user := getUserFromContext(ctx)
 
 			if user == nil {
 				http.Error(w, "Invalid API key", http.StatusUnauthorized)
 				return
 			}
-
-			*ctx = addValueToContext(ctx, "user", user)
 
 			next.ServeHTTP(w, r)
 		})
