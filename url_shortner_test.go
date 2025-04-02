@@ -595,179 +595,6 @@ func TestDeleteUrl(t *testing.T) {
 	deleteUrl(&ctx, "194d5")
 }
 
-// func TestUrlActivationAndDeactivation(t *testing.T) {
-// 	db := InitTest()
-// 	ctx := context.Background()
-// 	ctx = addValueToContext(&ctx, "db", db)
-
-// 	// Create a test user
-// 	testUser := &Users{
-// 		Email:     "test-activation@example.com",
-// 		Name:      addressOf("Test Activation User"),
-// 		ApiKey:    "test_api_key_activation",
-// 		CreatedAt: time.Now(),
-// 		UpdatedAt: time.Now(),
-// 	}
-// 	db.Create(testUser)
-
-// 	// Add user to context
-// 	testUser = getUserFromApiKeyIfExists(&ctx, testUser.ApiKey)
-// 	ctx = addValueToContext(&ctx, "user", testUser)
-
-// 	// Create a URL with the test user
-// 	originalUrl := "http://example.com/activation-test"
-// 	shortenReqBody := strings.NewReader(fmt.Sprintf(`{
-// 		"url": "%s"
-// 	}`, originalUrl))
-
-// 	shortenReq, err := http.NewRequest("POST", "/shorten", shortenReqBody)
-// 	if err != nil {
-// 		t.Fatal(err)
-// 	}
-// 	shortenReq.Header.Set("Content-Type", "application/json")
-// 	shortenReq.Header.Set("X-API-Key", testUser.ApiKey)
-
-// 	shortenRR := httptest.NewRecorder()
-// 	handler := http.HandlerFunc(ctxServiceHandler(shortenUrl, &ctx))
-// 	handler.ServeHTTP(shortenRR, shortenReq)
-
-// 	// Check if URL was created successfully
-// 	if status := shortenRR.Code; status != http.StatusCreated {
-// 		t.Errorf("handler returned wrong status code: got %v want %v",
-// 			status, http.StatusCreated)
-// 	}
-
-// 	// Get the short code from response
-// 	var response map[string]string
-// 	if err := json.NewDecoder(shortenRR.Body).Decode(&response); err != nil {
-// 		t.Fatal("Failed to decode response body")
-// 	}
-// 	shortCode := response["short_code"]
-// 	if shortCode == "" {
-// 		t.Fatal("No short code returned in response")
-// 	}
-
-// 	// Verify URL exists and is active
-// 	urlModel := getUrlModel(&ctx, shortCode)
-// 	if urlModel == nil {
-// 		t.Fatal("URL should exist after creation")
-// 	}
-// 	if urlModel.DeletedAt != nil {
-// 		t.Fatal("URL should not be marked as deleted after creation")
-// 	}
-
-// 	// Test 1: Deactivate URL
-// 	deactivateBody := strings.NewReader(fmt.Sprintf(`{
-// 		"short_code": "%s",
-// 		"activate": false
-// 	}`, shortCode))
-
-// 	deactivateReq, err := http.NewRequest("PUT", "/url", deactivateBody)
-// 	if err != nil {
-// 		t.Fatal(err)
-// 	}
-// 	deactivateReq.Header.Set("Content-Type", "application/json")
-// 	deactivateReq.Header.Set("X-API-Key", testUser.ApiKey)
-
-// 	deactivateRR := httptest.NewRecorder()
-// 	editHandler := http.HandlerFunc(ctxServiceHandler(editUrl, &ctx))
-// 	editHandler.ServeHTTP(deactivateRR, deactivateReq)
-
-// 	// Check deactivation response
-// 	if status := deactivateRR.Code; status != http.StatusOK {
-// 		t.Errorf("handler returned wrong status code for deactivation: got %v want %v",
-// 			status, http.StatusOK)
-// 	}
-
-// 	// Verify URL is deactivated
-// 	urlModel = getUrlModel(&ctx, shortCode)
-// 	if urlModel != nil {
-// 		t.Error("URL should not be found after deactivation")
-// 	}
-
-// 	// Get the URL directly from the database to check DeletedAt
-// 	var deactivatedUrl UrlShortener
-// 	result := db.Where("short_code = ?", shortCode).First(&deactivatedUrl)
-// 	if result.Error != nil {
-// 		t.Fatal("Failed to fetch URL:", result.Error)
-// 	}
-// 	if deactivatedUrl.DeletedAt == nil {
-// 		t.Error("URL should be marked as deleted after deactivation")
-// 	}
-
-// 	// Test 2: Activate URL
-// 	activateBody := strings.NewReader(fmt.Sprintf(`{
-// 		"short_code": "%s",
-// 		"activate": true
-// 	}`, shortCode))
-
-// 	activateReq, err := http.NewRequest("PUT", "/url", activateBody)
-// 	if err != nil {
-// 		t.Fatal(err)
-// 	}
-// 	activateReq.Header.Set("Content-Type", "application/json")
-// 	activateReq.Header.Set("X-API-Key", testUser.ApiKey)
-
-// 	activateRR := httptest.NewRecorder()
-// 	editHandler.ServeHTTP(activateRR, activateReq)
-
-// 	// Check activation response
-// 	if status := activateRR.Code; status != http.StatusOK {
-// 		t.Errorf("handler returned wrong status code for activation: got %v want %v",
-// 			status, http.StatusOK)
-// 	}
-
-// 	// Verify URL is activated
-// 	urlModel = getUrlModel(&ctx, shortCode)
-// 	if urlModel == nil {
-// 		t.Error("URL should be found after activation")
-// 	}
-
-// 	// Get the URL directly from the database to check DeletedAt
-// 	var activatedUrl UrlShortener
-// 	result = db.Where("short_code = ?", shortCode).First(&activatedUrl)
-// 	if result.Error != nil {
-// 		t.Fatal("Failed to fetch URL:", result.Error)
-// 	}
-// 	if activatedUrl.DeletedAt != nil {
-// 		t.Error("URL should not be marked as deleted after activation")
-// 	}
-
-// 	// Test 3: Try to edit URL with a different user
-// 	// Create another test user
-// 	anotherUser := &Users{
-// 		Email:     "another-user@example.com",
-// 		Name:      addressOf("Another User"),
-// 		ApiKey:    "another_user_api_key",
-// 		CreatedAt: time.Now(),
-// 		UpdatedAt: time.Now(),
-// 	}
-// 	db.Create(anotherUser)
-
-// 	// Add the other user to context
-// 	anotherUser = getUserFromApiKeyIfExists(&ctx, anotherUser.ApiKey)
-// 	ctx = addValueToContext(&ctx, "user", anotherUser)
-
-// 	// Try to deactivate URL with another user
-// 	deactivateReq, _ = http.NewRequest("PUT", "/url", deactivateBody)
-// 	deactivateReq.Header.Set("Content-Type", "application/json")
-// 	deactivateReq.Header.Set("X-API-Key", anotherUser.ApiKey)
-
-// 	deactivateRR = httptest.NewRecorder()
-// 	editHandler.ServeHTTP(deactivateRR, deactivateReq)
-
-// 	// Should get Forbidden status
-// 	if status := deactivateRR.Code; status != http.StatusForbidden {
-// 		t.Errorf("handler should return Forbidden for unauthorized user: got %v want %v",
-// 			status, http.StatusForbidden)
-// 	}
-
-// 	// Clean up
-// 	db.Unscoped().Delete(&UrlShortener{ShortCode: shortCode})
-// 	db.Unscoped().Delete(testUser)
-// 	db.Unscoped().Delete(anotherUser)
-// }
-
 func TestPasswordProtectedUrl(t *testing.T) {
 	db := InitTest()
 	ctx := context.Background()
@@ -1260,4 +1087,46 @@ func TestIpRateLimitMiddleware(t *testing.T) {
 			redisClient.Del(redisKey)
 		})
 	}
+}
+
+func TestCreateNUrlEntriesBatch(t *testing.T) {
+	db := InitTest()
+	ctx := context.Background()
+	initRedis()
+	ctx = addValueToContext(&ctx, "db", db)
+
+	n := 15_00_000   // Number of entries
+	batchSize := 100 // Insert in batches of 100
+
+	startTime := time.Now()
+
+	for i := 0; i < n; i += batchSize {
+		batch := make([]UrlShortener, 0, batchSize)
+
+		// Create a batch of entries
+		end := min(i+batchSize, n)
+
+		for j := i; j < end; j++ {
+			originalUrl := fmt.Sprintf("https://example.com/test/%d/%s", j, uuid.New().String())
+
+			batch = append(batch, UrlShortener{
+				OriginalUrl: originalUrl,
+				ShortCode:   createShortCode(&ctx, 0),
+				CreatedAt:   time.Now(),
+				UpdatedAt:   time.Now(),
+			})
+		}
+
+		// Insert the batch
+		result := db.Create(&batch)
+		if result.Error != nil {
+			t.Fatalf("Failed to insert batch starting at %d: %v", i, result.Error)
+		}
+
+		t.Logf("Created entries %d to %d", i, end-1)
+	}
+
+	elapsed := time.Since(startTime)
+	t.Logf("Created %d URL entries in %v (%.2f entries/sec)",
+		n, elapsed, float64(n)/elapsed.Seconds())
 }

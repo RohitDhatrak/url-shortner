@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"sync/atomic"
 	"time"
 
@@ -39,30 +40,39 @@ func getUserFromContext(ctx *context.Context) *Users {
 }
 
 func createShortCode(ctx *context.Context, retryCount uint) string {
-	if retryCount > MAX_RETRIES {
-		errMsg := "Error creating short url, max retry count exceded"
-		panic(errMsg)
-	}
-
 	// get current time in epoch starting from 1st Jan 2025
 	currentEpochTime := getCustomEpochTime()
+
+	// if the current epoch time is different from the last epoch time, reset the counter
+	// if currentEpochTime != lastCounterEpochTimestamp {
+	// 	atomic.StoreUint64(&counter, 0)
+	// 	lastCounterEpochTimestamp = currentEpochTime
+	// }
+
+	oldTimestamp := atomic.LoadInt64(&lastCounterEpochTimestamp)
+	if currentEpochTime != oldTimestamp {
+		// Try to update the timestamp with compare-and-swap to avoid race conditions
+		if atomic.CompareAndSwapInt64(&lastCounterEpochTimestamp, oldTimestamp, currentEpochTime) {
+			// Only reset the counter if we successfully updated the timestamp
+			atomic.StoreUint64(&counter, 0)
+		}
+	}
 
 	// get an atomic counter to handle concurrent calls
 	count := atomic.AddUint64(&counter, 1)
 
-	// if the current epoch time is different from the last epoch time, reset the counter
-	if currentEpochTime != lastCounterEpochTimestamp {
-		atomic.StoreUint64(&counter, 0)
-		lastCounterEpochTimestamp = currentEpochTime
-	}
-
 	// TODO: also add a service id if there are multiple instances of the service
 
-	numbericShortCode := int64(count) + currentEpochTime
+	stringShortCode := strconv.FormatInt(currentEpochTime, 10) + strconv.FormatUint(count, 10)
+	numbericShortCode, _ := strconv.ParseInt(stringShortCode, 10, 64)
 	shortCode := toBase36(numbericShortCode)
 
 	shortCodeExists := doesShortCodeExist(ctx, shortCode)
 	if shortCodeExists {
+		if retryCount > MAX_RETRIES {
+			errMsg := "Error creating short url, max retry count exceded " + shortCode
+			panic(errMsg)
+		}
 		return createShortCode(ctx, retryCount+1)
 	}
 
