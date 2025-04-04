@@ -349,9 +349,35 @@ func getUserUrls(ctx *context.Context, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	urls := getUrlsByUserId(ctx, user.Id)
+	page, err := strconv.Atoi(r.URL.Query().Get("page"))
+	if err != nil || page < 1 {
+		page = 1
+	}
+
+	pageSize, err := strconv.Atoi(r.URL.Query().Get("pageSize"))
+	if err != nil || pageSize < 1 {
+		pageSize = 10
+	}
+
+	urls := getUrlsByUserId(ctx, user.Id, page, pageSize)
+
+	var totalCount int64
+	db := getDbFromContext(ctx)
+	db.Model(&UrlShortener{}).Where("user_id = ?", user.Id).Count(&totalCount)
+
+	totalPages := (totalCount + int64(pageSize) - 1) / int64(pageSize)
+
+	response := map[string]interface{}{
+		"urls": urls,
+		"pagination": map[string]interface{}{
+			"currentPage": page,
+			"pageSize":    pageSize,
+			"totalCount":  totalCount,
+			"totalPages":  totalPages,
+		},
+	}
 
 	w.WriteHeader(http.StatusOK)
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(urls)
+	json.NewEncoder(w).Encode(response)
 }

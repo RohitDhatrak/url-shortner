@@ -677,8 +677,9 @@ func TestGetUserUrlsRepoFunction(t *testing.T) {
 	ctx := context.Background()
 	ctx = addValueToContext(&ctx, "db", db)
 
-	urls := getUrlsByUserId(&ctx, 1)
+	urls := getUrlsByUserId(&ctx, 1, 1, 10)
 
+	fmt.Println(len(urls))
 	if len(urls) <= 0 {
 		t.Errorf("Expected urls, got %d", len(urls))
 	}

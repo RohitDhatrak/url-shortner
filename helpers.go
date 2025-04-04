@@ -198,10 +198,13 @@ func getUserFromApiKeyIfExists(ctx *context.Context, apiKey string) *Users {
 	return &user
 }
 
-func getUrlsByUserId(ctx *context.Context, userId uint) []UrlShortener {
+func getUrlsByUserId(ctx *context.Context, userId uint, page int, pageSize int) []UrlShortener {
 	db := getDbFromContext(ctx)
 	var urls []UrlShortener
-	db.Where("user_id = ?", userId).Find(&urls)
+
+	offset := (page - 1) * pageSize
+	db.Where("user_id = ?", userId).Limit(pageSize).Offset(offset).Find(&urls)
+
 	return urls
 }
 
